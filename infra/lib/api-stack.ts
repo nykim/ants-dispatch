@@ -289,6 +289,22 @@ export class ApiStack extends Stack {
     table.grantReadWriteData(unsubscribeFn);
     unsubscribeSecret.grantRead(unsubscribeFn);
 
+    const viewFn = new NodejsFunction(this, 'ViewFn', {
+      ...baseFnProps,
+      entry: path.resolve(repoRoot, 'services/api-public/src/view.ts'),
+      handler: 'handler',
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      environment: {
+        ENV_NAME: config.envName,
+        TABLE_NAME: table.tableName,
+        UNSUB_SECRET: unsubscribeSecret.secretValue.unsafeUnwrap(),
+        PUBLIC_BASE_URL: `https://${config.publicHost}`,
+      },
+    });
+    table.grantReadData(viewFn);
+    unsubscribeSecret.grantRead(viewFn);
+
     this.api = new RestApi(this, 'DispatchApi', {
       restApiName: `nda-dispatch-api-${config.envName}`,
       deployOptions: {
@@ -390,6 +406,8 @@ export class ApiStack extends Stack {
     const unsub = publicRoot.addResource('u');
     unsub.addMethod('GET', new LambdaIntegration(unsubscribeFn));
     unsub.addMethod('POST', new LambdaIntegration(unsubscribeFn));
+    const view = publicRoot.addResource('v');
+    view.addMethod('GET', new LambdaIntegration(viewFn));
 
     // WAF — REGIONAL ACL attached to the API stage. Protects both admin and
     // public routes, with an extra rate-limit scoped to /public/* since those

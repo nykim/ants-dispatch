@@ -9,16 +9,19 @@ import TextAlign from '@tiptap/extension-text-align';
 import {
   createTemplate,
   deleteTemplate,
+  getSettings,
   listTemplates,
   listTypes,
   testSendTemplate,
   updateTemplate,
   type Asset,
   type NewsletterType,
+  type OrgSettings,
   type Template,
 } from '../api/endpoints';
 import { AssetPickerModal } from '../components/AssetPickerModal';
 import { TypePill } from '../components/types/TypePill';
+import { renderFooterPreviewHtml } from '../lib/footerPreview';
 import { buildPreviewSrcDoc } from '../lib/previewFrame';
 
 export const Route = createFileRoute('/_app/compose')({
@@ -28,6 +31,9 @@ export const Route = createFileRoute('/_app/compose')({
 const LIST_COLLAPSE_KEY = 'dispatch.compose.list.collapsed';
 const ASSET_BASE_KEY = 'dispatch.compose.assetBase';
 const EDITOR_MODE_KEY = 'dispatch.compose.editorMode';
+const SPLIT_RATIO_KEY = 'dispatch.compose.splitRatio';
+const MIN_PANE_PCT = 20;
+const MAX_PANE_PCT = 80;
 
 type EditorMode = 'visual' | 'code';
 
@@ -55,6 +61,11 @@ function ComposePage() {
     queryKey: ['types', false],
     queryFn: () => listTypes(),
   });
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettings,
+  });
+  const [previewOpen, setPreviewOpen] = useState(false);
   const typeById = useMemo(() => new Map(types.map((t) => [t.id, t])), [types]);
   // The "+ New newsletter" flow: pick a type first, then create. The picker
   // pops over the sidebar; cancelling closes it without creating.
@@ -85,6 +96,38 @@ function ComposePage() {
   useEffect(() => {
     window.localStorage.setItem(EDITOR_MODE_KEY, editorMode);
   }, [editorMode]);
+
+  const [splitRatio, setSplitRatio] = useState<number>(() => {
+    if (typeof window === 'undefined') return 50;
+    const saved = Number(window.localStorage.getItem(SPLIT_RATIO_KEY));
+    return Number.isFinite(saved) && saved >= MIN_PANE_PCT && saved <= MAX_PANE_PCT ? saved : 50;
+  });
+  useEffect(() => {
+    window.localStorage.setItem(SPLIT_RATIO_KEY, String(splitRatio));
+  }, [splitRatio]);
+  const splitRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  function startDrag(e: React.MouseEvent) {
+    e.preventDefault();
+    draggingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      if (!draggingRef.current || !splitRef.current) return;
+      const rect = splitRef.current.getBoundingClientRect();
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setSplitRatio(Math.min(MAX_PANE_PCT, Math.max(MIN_PANE_PCT, pct)));
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   // Snapshot of the original (pre-WYSIWYG) HTML, captured the first time the
   // user enters Visual mode for a given template. Lets us offer a "Restore
@@ -563,7 +606,18 @@ function ComposePage() {
             A standard footer with your unsubscribe link is added automatically on send — you don't need to include one here. Edit it on the <a href="/settings" style={{ color: 'inherit', textDecoration: 'underline' }}>Settings</a> page.
           </p>
 
-          <div className="split" style={{ gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr' }}>
+          <div
+            ref={splitRef}
+            className="split"
+            style={{
+              gridTemplateColumns:
+                editorMode === 'visual'
+                  ? '1fr'
+                  : `${splitRatio}% 6px ${100 - splitRatio}%`,
+              gridTemplateRows: '1fr',
+              gap: 0,
+            }}
+          >
             <div className="split-pane">
               <div className="split-pane-header" style={{ gap: 8 }}>
                 <div className="editor-mode-toggle" role="tablist" aria-label="Editor mode">
@@ -635,9 +689,37 @@ function ComposePage() {
                 )}
               </div>
             </div>
-            <div className="split-pane">
-              <div className="split-pane-header" style={{ gap: 8 }}>
-                <span className="mono-sm">Preview</span>
+            {editorMode === 'code' && (
+              <>
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize editor and preview"
+                  onMouseDown={startDrag}
+                  onDoubleClick={() => setSplitRatio(50)}
+                  title="Drag to resize · double-click to reset"
+                  style={{
+                    cursor: 'col-resize',
+                    background: 'var(--rule)',
+                    position: 'relative',
+                    userSelect: 'none',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: '50% -4px auto -4px',
+                      transform: 'translateY(-50%)',
+                      height: 32,
+                      borderLeft: '1px solid var(--rule-soft)',
+                      borderRight: '1px solid var(--rule-soft)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                </div>
+                <div className="split-pane">
+                  <div className="split-pane-header" style={{ gap: 8 }}>
+                    <span className="mono-sm">Preview</span>
                 <input
                   className="input"
                   value={assetBase}
@@ -647,16 +729,18 @@ function ComposePage() {
                   style={{ flex: 1, fontSize: 11, padding: '4px 8px', fontFamily: 'var(--mono)' }}
                 />
               </div>
-              <div className="split-pane-body preview-shell">
-                <iframe
-                  className="preview-page"
-                  style={{ border: 'none' }}
-                  title="preview"
-                  srcDoc={previewDoc}
-                  sandbox=""
-                />
-              </div>
-            </div>
+                  <div className="split-pane-body preview-shell">
+                    <iframe
+                      className="preview-page"
+                      style={{ border: 'none' }}
+                      title="preview"
+                      srcDoc={previewDoc}
+                      sandbox=""
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="row items-center justify-between" style={{ paddingTop: 4 }}>
@@ -688,6 +772,14 @@ function ComposePage() {
                 disabled={deleteMut.isPending}
               >
                 Delete
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => setPreviewOpen(true)}
+                disabled={!localHtml.trim()}
+                title="See the email exactly as it will render, including the footer"
+              >
+                Preview rendered email
               </button>
               <button
                 className="btn btn-sm"
@@ -730,6 +822,15 @@ function ComposePage() {
       <AssetPickerModal
         onClose={() => setImagePickerOpen(false)}
         onSelect={handleAssetSelect}
+      />
+    )}
+    {previewOpen && (
+      <RenderedPreviewModal
+        html={localHtml}
+        subject={localSubject}
+        title={localTitle}
+        settings={settings}
+        onClose={() => setPreviewOpen(false)}
       />
     )}
     </>
@@ -796,6 +897,87 @@ function NewTypePicker({
 
 function escapeAttr(s: string): string {
   return s.replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function RenderedPreviewModal({
+  html,
+  subject,
+  title,
+  settings,
+  onClose,
+}: {
+  html: string;
+  subject: string;
+  title: string;
+  settings: OrgSettings | undefined;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const footer = renderFooterPreviewHtml({
+    footerHtml: settings?.footerHtml ?? '',
+    senderName: settings?.senderName,
+    senderAddress: settings?.senderAddress,
+    unsubUrl: 'https://example.com/u?c=preview&e=you%40example.com&t=preview',
+  });
+  const doc = buildPreviewSrcDoc(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body { margin: 0; background: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .preview-shell { max-width: 640px; margin: 24px auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .preview-body { padding: 24px; }
+</style>
+</head>
+<body>
+<div class="preview-shell"><div class="preview-body">${html}${footer}</div></div>
+</body>
+</html>`);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal modal-lg"
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: '92vw', maxWidth: 1000, height: '90vh', display: 'flex', flexDirection: 'column' }}
+      >
+        <div className="modal-header">
+          <div className="eyebrow">Email preview</div>
+          <h2 className="serif" style={{ fontSize: 18, marginTop: 4 }}>
+            {subject || title || '(no subject)'}
+          </h2>
+          <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Unsubscribe link is a placeholder. The footer is appended automatically on real sends.
+          </p>
+        </div>
+        <div className="modal-body" style={{ flex: 1, padding: '8px 16px 16px' }}>
+          <iframe
+            title="email-preview"
+            srcDoc={doc}
+            sandbox=""
+            style={{
+              width: '100%',
+              height: '100%',
+              border: '1px solid var(--rule)',
+              borderRadius: 6,
+              background: 'var(--paper)',
+            }}
+          />
+        </div>
+        <div className="modal-footer" style={{ justifyContent: 'flex-end' }}>
+          <button className="btn btn-sm" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function WysiwygToolbar({ editor, onPickImage }: { editor: Editor; onPickImage: () => void }) {

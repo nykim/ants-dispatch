@@ -3,7 +3,13 @@ import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { createUnsubscribeToken } from '../../../packages/shared/src/unsubscribe';
-import { loadSettings, renderFooterHtml, renderFooterText } from './footer';
+import { createViewToken } from '../../../packages/shared/src/viewInBrowser';
+import {
+  loadSettings,
+  renderFooterHtml,
+  renderFooterText,
+  renderViewInBrowserBar,
+} from './footer';
 
 const ses = new SESv2Client({});
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -53,6 +59,10 @@ async function processRecord(record: SQSRecord): Promise<void> {
   const unsubUrl = `${PUBLIC_BASE_URL}/public/u?c=${encodeURIComponent(job.campaignId)}&e=${encodeURIComponent(
     job.email,
   )}&t=${token}`;
+  const viewToken = createViewToken(UNSUB_SECRET, job.campaignId, job.email);
+  const viewUrl = `${PUBLIC_BASE_URL}/public/v?c=${encodeURIComponent(job.campaignId)}&e=${encodeURIComponent(
+    job.email,
+  )}&t=${viewToken}`;
   const mailtoUnsub = `mailto:unsubscribe@${FROM_ADDRESS.replace(/.*@/, '').replace(/>.*/, '')}?subject=unsubscribe`;
   const headers = [
     { Name: 'List-Unsubscribe', Value: `<${mailtoUnsub}>, <${unsubUrl}>` },
@@ -61,8 +71,12 @@ async function processRecord(record: SQSRecord): Promise<void> {
   ];
 
   const settings = await loadSettings(TABLE);
-  const finalHtml = job.html + renderFooterHtml(settings, unsubUrl);
-  const finalText = stripHtml(job.html) + renderFooterText(settings, unsubUrl);
+  // Test sends don't have a campaign META row, so the /public/v handler can't
+  // resolve them — omit the view-in-browser bar to avoid a dead link.
+  const viewBarHtml = job.test ? '' : renderViewInBrowserBar(viewUrl);
+  const viewBarText = job.test ? '' : `View in browser: ${viewUrl}\n\n`;
+  const finalHtml = viewBarHtml + job.html + renderFooterHtml(settings, unsubUrl);
+  const finalText = viewBarText + stripHtml(job.html) + renderFooterText(settings, unsubUrl);
 
   const res = await ses.send(
     new SendEmailCommand({

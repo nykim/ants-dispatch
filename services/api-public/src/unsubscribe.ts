@@ -2,6 +2,7 @@ import type { APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
+  GetCommand,
   PutCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -9,6 +10,7 @@ import {
   contactStatusIndexFields,
   suppressionState,
   verifyUnsubscribeToken,
+  type OrgSettings,
 } from '../../../packages/shared/src';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -19,6 +21,27 @@ const TABLE = mustEnv('TABLE_NAME');
 const UNSUB_SECRET = mustEnv('UNSUB_SECRET');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const SETTINGS_TTL_MS = 60_000;
+let cachedSettings: { at: number; settings: OrgSettings } | null = null;
+
+async function loadSettings(): Promise<OrgSettings> {
+  const now = Date.now();
+  if (cachedSettings && now - cachedSettings.at < SETTINGS_TTL_MS) return cachedSettings.settings;
+  const res = await ddb.send(
+    new GetCommand({ TableName: TABLE, Key: { PK: 'ORG#default', SK: 'SETTINGS' } }),
+  );
+  const settings: OrgSettings = res.Item
+    ? {
+        footerHtml: typeof res.Item.footerHtml === 'string' ? res.Item.footerHtml : '',
+        senderName: typeof res.Item.senderName === 'string' ? res.Item.senderName : undefined,
+        senderAddress:
+          typeof res.Item.senderAddress === 'string' ? res.Item.senderAddress : undefined,
+      }
+    : { footerHtml: '' };
+  cachedSettings = { at: now, settings };
+  return settings;
+}
 
 /**
  * Public, unauthenticated endpoints for unsubscribe:
@@ -50,7 +73,8 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     // RFC 8058 one-click — mail clients want a 200 with no body.
     return { statusCode: 200, headers: { 'content-type': 'text/plain' }, body: 'OK' };
   }
-  return html(200, confirmationPage(email));
+  const settings = await loadSettings().catch(() => ({ footerHtml: '' } as OrgSettings));
+  return html(200, confirmationPage(email, settings));
 };
 
 async function recordUnsubscribe(campaignId: string, email: string): Promise<void> {
@@ -114,29 +138,30 @@ function verifyToken(campaignId: string, email: string, token: string): boolean 
   return verifyUnsubscribeToken(UNSUB_SECRET, campaignId, email, token);
 }
 
-function confirmationPage(email: string): string {
+function confirmationPage(email: string, settings: OrgSettings): string {
+  const footerLine = senderFooterLine(settings);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Unsubscribed · NDA Dispatch</title>
+  <title>Unsubscribed</title>
   <style>
     body{font-family:'Source Serif 4',Georgia,serif;background:#faf7f1;color:#2a2420;margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
     .card{max-width:520px;width:100%;background:#fff;border:1px solid #e6decf;border-radius:8px;padding:36px 32px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
     h1{font-size:24px;margin:0 0 12px;letter-spacing:-.01em}
     p{font-size:15px;line-height:1.6;color:#554a40;margin:8px 0}
     code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#f4efe5;padding:2px 6px;border-radius:3px;font-size:13px}
-    .muted{color:#8a7f70;font-size:13px;margin-top:22px;border-top:1px solid #e6decf;padding-top:14px}
+    .muted{color:#8a7f70;font-size:13px;margin-top:22px;border-top:1px solid #e6decf;padding-top:14px;white-space:pre-line}
   </style></head>
   <body><div class="card">
     <h1>You've been unsubscribed</h1>
     <p><code>${escapeHtml(email)}</code> has been removed from future mailings.</p>
     <p>If this was a mistake, reply to any recent dispatch and we'll restore you.</p>
-    <p class="muted">NDA Dispatch · National Institute of Mental Health Data Archive</p>
+    ${footerLine ? `<p class="muted">${footerLine}</p>` : ''}
   </div></body></html>`;
 }
 
 function errorPage(message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-  <title>Unsubscribe · NDA Dispatch</title>
+  <title>Unsubscribe</title>
   <style>
     body{font-family:'Source Serif 4',Georgia,serif;background:#faf7f1;color:#2a2420;margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
     .card{max-width:520px;width:100%;background:#fff;border:1px solid #e6decf;border-radius:8px;padding:36px 32px}
@@ -144,6 +169,13 @@ function errorPage(message: string): string {
     p{font-size:15px;line-height:1.6;color:#554a40}
   </style></head>
   <body><div class="card"><h1>Unsubscribe</h1><p>${escapeHtml(message)}</p></div></body></html>`;
+}
+
+function senderFooterLine(settings: OrgSettings): string {
+  const parts: string[] = [];
+  if (settings.senderName) parts.push(escapeHtml(settings.senderName));
+  if (settings.senderAddress) parts.push(escapeHtml(settings.senderAddress).replace(/\n/g, '<br/>'));
+  return parts.join(' · ');
 }
 
 function escapeHtml(s: string): string {

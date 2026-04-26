@@ -234,13 +234,51 @@ user pool.
 
 ## Subsequent deploys
 
-```bash
-# Infra changes (Lambda code, CDK constructs)
-cd infra && npx cdk deploy <StackName> -c env=dev
+The repo root has a single `deploy.sh` that ships infra (CDK) and the SPA in
+one shot. It delegates the SPA half to `web/deploy.sh`.
 
-# SPA changes only
+```bash
+./deploy.sh                       # env=dev, deploys all stacks + SPA
+./deploy.sh prod                  # env=prod
+./deploy.sh dev --infra-only      # CDK only
+./deploy.sh dev --web-only        # SPA only
+./deploy.sh dev --skip-build      # SPA: reuse existing web/dist
+./deploy.sh dev --stacks "ApiStack DeliveryStack"   # subset of CDK stacks
+```
+
+For finer control you can still call the underlying scripts directly:
+
+```bash
+cd infra && npx cdk deploy <StackName> -c env=dev
 cd web && ./deploy.sh dev
 ```
+
+### `dev` vs `prod`
+
+The env flag drives five things:
+
+1. **Stack name prefix.** `NdaDispatch-Dev-*` vs `NdaDispatch-Prod-*` — each
+   env has its own CloudFormation stacks, S3 SPA bucket, CloudFront
+   distribution, DynamoDB table, and Lambdas. They share nothing.
+2. **Domain context.** `infra/lib/config.ts` reads `domain.dev` vs
+   `domain.prod` from `infra/cdk.json`. Today both default to the same host;
+   set them differently if you want separate hostnames per env.
+3. **Resource retention.** `removalOnDestroy = envName === 'dev'`. Dev
+   resources (S3 buckets, log groups, etc.) get `RemovalPolicy.DESTROY` so
+   `cdk destroy` cleans them out. Prod uses `RETAIN` so a teardown can't
+   delete user data by accident.
+4. **CDK approval gate.** `npm run -w infra deploy:dev` uses
+   `--require-approval never`; `deploy:prod` uses `--require-approval
+   broadening`, which prompts before any IAM-broadening change.
+5. **`web/deploy.sh` lookup.** It queries CloudFormation outputs
+   (`SpaBucketName`, `DistributionId`, `PublicUrl`) by the env-specific stack
+   prefix; pointing it at the wrong env will either fail to resolve outputs
+   or push the SPA into the wrong bucket.
+
+> ⚠️ The root `deploy.sh` currently passes `--require-approval never` for
+> both envs, which silences the prod approval prompt that
+> `npm run -w infra deploy:prod` would enforce. If you want the prod prompt
+> back, run `cd infra && npm run deploy:prod` instead.
 
 ## Configuration
 
