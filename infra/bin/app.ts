@@ -31,6 +31,7 @@ const delivery = new DeliveryStack(app, `${prefix}-Delivery`, {
   config,
   table: data.table,
   sendQueue: data.sendQueue,
+  enqueueQueue: data.enqueueQueue,
   unsubscribeSecret: data.unsubscribeSecret,
 });
 
@@ -49,6 +50,7 @@ const api = new ApiStack(app, `${prefix}-Api`, {
   archiveBucket: storage.archiveBucket,
   importsBucket: processing.importsBucket,
   sendQueue: data.sendQueue,
+  enqueueQueue: data.enqueueQueue,
   unsubscribeSecret: data.unsubscribeSecret,
 });
 

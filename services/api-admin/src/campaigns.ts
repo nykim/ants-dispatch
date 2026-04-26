@@ -8,7 +8,7 @@ import {
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { SQSClient, type SendMessageBatchRequestEntry } from '@aws-sdk/client-sqs';
+import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import {
   SchedulerClient,
   CreateScheduleCommand,
@@ -19,7 +19,6 @@ import {
   batchGetAll,
   batchWriteAll,
   materializeAudienceEmails,
-  sendMessageBatchAll,
 } from '../../../packages/shared/src';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -29,7 +28,7 @@ const sqs = new SQSClient({});
 const scheduler = new SchedulerClient({});
 
 const TABLE = mustEnv('TABLE_NAME');
-const SEND_QUEUE_URL = mustEnv('SEND_QUEUE_URL');
+const ENQUEUE_QUEUE_URL = mustEnv('ENQUEUE_QUEUE_URL');
 // Scheduling-related env vars are optional in dev so the handler still works
 // before the scheduler infra has been deployed; we error on actual schedule
 // creation if any are missing.
@@ -101,7 +100,7 @@ interface CampaignRecord {
   typeId?: string;
   subject: string;
   html: string;
-  status: 'draft' | 'scheduled' | 'queued' | 'sending' | 'sent' | 'failed';
+  status: 'draft' | 'scheduled' | 'queueing' | 'queued' | 'sending' | 'sent' | 'failed';
   recipients: number;
   tags: string[];
   excludeTags: string[];
@@ -335,23 +334,21 @@ async function sendCampaign(
     return { id, status: 'scheduled', enqueued: 0, scheduleAt };
   }
 
-  const subject = String(meta.Item.subject);
-  const html = String(meta.Item.html);
   const now = new Date().toISOString();
-  await claimStatusFromDraft(id, 'sending', { tags, excludeTags, tagMode, actor });
+  // Hand off to the worker-enqueue Lambda (via SQS) so the API call returns
+  // promptly even for 50K-recipient campaigns. The worker materializes the
+  // audience, writes RCPT rows, and pushes per-recipient messages into the
+  // send queue. Status flow: draft → queueing → queued → (sending) → ...
+  await claimStatusFromDraft(id, 'queueing', { tags, excludeTags, tagMode, actor });
 
   try {
-    const recipients = await materializeAudienceEmails(ddb, TABLE, { tagMode, tags, excludeTags });
-    if (recipients.length === 0) {
-      throw new HttpError(400, 'empty-audience', 'No recipients match the filters');
-    }
-
-    await createStatsRow(id);
-    await batchWriteAll(ddb, TABLE, buildRecipientRows(id, recipients, now));
-    const enqueued = await enqueueCampaignMessages(id, recipients, subject, html);
-
-    await markStatus(id, 'queued', { sentAt: now, recipients: recipients.length });
-    return { id, status: 'queued', enqueued };
+    await sqs.send(
+      new SendMessageCommand({
+        QueueUrl: ENQUEUE_QUEUE_URL,
+        MessageBody: JSON.stringify({ campaignId: id }),
+      }),
+    );
+    return { id, status: 'queueing', enqueued: 0 };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await markStatus(id, 'failed', { sentAt: now, error: msg });
@@ -428,7 +425,7 @@ function stripKeys(item: Record<string, unknown>): Record<string, unknown> {
 
 async function claimStatusFromDraft(
   id: string,
-  nextStatus: 'scheduled' | 'sending',
+  nextStatus: 'scheduled' | 'queueing',
   opts: {
     tags: string[];
     excludeTags: string[];
@@ -484,25 +481,6 @@ async function rollbackScheduledDraft(id: string): Promise<void> {
   );
 }
 
-async function createStatsRow(id: string): Promise<void> {
-  await ddb.send(
-    new PutCommand({
-      TableName: TABLE,
-      Item: {
-        PK: `CAMPAIGN#${id}`,
-        SK: 'STATS',
-        delivered: 0,
-        opened: 0,
-        clicked: 0,
-        bounced: 0,
-        complained: 0,
-        unsubscribed: 0,
-      },
-      ConditionExpression: 'attribute_not_exists(PK)',
-    }),
-  ).catch(() => undefined);
-}
-
 async function markStatus(
   id: string,
   status: 'queued' | 'failed',
@@ -522,70 +500,6 @@ async function markStatus(
       ExpressionAttributeValues: values,
       ExpressionAttributeNames: names,
     }),
-  );
-}
-
-function buildRecipientRows(
-  campaignId: string,
-  recipients: string[],
-  queuedAt: string,
-): { PutRequest?: unknown; DeleteRequest?: unknown }[] {
-  return recipients.map((email) => ({
-    PutRequest: {
-      Item: {
-        PK: `CAMPAIGN#${campaignId}`,
-        SK: `RCPT#${email}`,
-        GSI1PK: `RCPT#${email}`,
-        GSI1SK: campaignId,
-        email,
-        state: 'pending',
-        queuedAt,
-      },
-    },
-  }));
-}
-
-async function enqueueCampaignMessages(
-  campaignId: string,
-  recipients: string[],
-  subject: string,
-  html: string,
-): Promise<number> {
-  const entries: SendMessageBatchRequestEntry[] = recipients.map((email, index) => ({
-    Id: `${index}`,
-    MessageBody: JSON.stringify({ campaignId, email, subject, html }),
-  }));
-  const result = await sendMessageBatchAll(sqs, SEND_QUEUE_URL, entries);
-  if (result.failed.length > 0) {
-    await markRecipientEnqueueFailures(
-      campaignId,
-      result.failed.map((failure) => ({
-        email: recipients[Number(failure.entry.Id)],
-        message: failure.message ?? failure.code ?? 'SQS enqueue failed',
-      })),
-    );
-    throw new Error(`Failed to enqueue ${result.failed.length} recipient(s)`);
-  }
-  return result.successful.length;
-}
-
-async function markRecipientEnqueueFailures(
-  campaignId: string,
-  failures: { email: string; message: string }[],
-): Promise<void> {
-  const at = new Date().toISOString();
-  await Promise.all(
-    failures.map(({ email, message }) =>
-      ddb.send(
-        new UpdateCommand({
-          TableName: TABLE,
-          Key: { PK: `CAMPAIGN#${campaignId}`, SK: `RCPT#${email}` },
-          UpdateExpression: 'SET #s = :s, failedAt = :at, #e = :e',
-          ExpressionAttributeNames: { '#s': 'state', '#e': 'error' },
-          ExpressionAttributeValues: { ':s': 'failed', ':at': at, ':e': message },
-        }),
-      ),
-    ),
   );
 }
 

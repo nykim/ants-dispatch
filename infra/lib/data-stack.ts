@@ -26,6 +26,8 @@ export class DataStack extends Stack {
   readonly table: Table;
   readonly sendQueue: Queue;
   readonly sendDlq: Queue;
+  readonly enqueueQueue: Queue;
+  readonly enqueueDlq: Queue;
   readonly unsubscribeSecret: Secret;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
@@ -81,9 +83,29 @@ export class DataStack extends Stack {
       deadLetterQueue: { maxReceiveCount: 5, queue: this.sendDlq },
     });
 
+    // Queue feeding the worker-enqueue Lambda. One message = one campaign to
+    // materialize + push into sendQueue. Lower receive count (2) than the
+    // send queue because re-running the audience materialize after a partial
+    // send risks duplicate sends. Visibility timeout matches worker-enqueue's
+    // Lambda timeout (15 min) so a long-running campaign isn't redelivered
+    // mid-flight.
+    this.enqueueDlq = new Queue(this, 'EnqueueDlq', {
+      queueName: `nda-dispatch-${config.envName}-enqueue-dlq`,
+      encryption: QueueEncryption.SQS_MANAGED,
+      retentionPeriod: Duration.days(14),
+    });
+    this.enqueueQueue = new Queue(this, 'EnqueueQueue', {
+      queueName: `nda-dispatch-${config.envName}-enqueue`,
+      encryption: QueueEncryption.SQS_MANAGED,
+      visibilityTimeout: Duration.minutes(15),
+      retentionPeriod: Duration.days(4),
+      deadLetterQueue: { maxReceiveCount: 2, queue: this.enqueueDlq },
+    });
+
     new CfnOutput(this, 'TableName', { value: this.table.tableName });
     new CfnOutput(this, 'TableStreamArn', { value: this.table.tableStreamArn ?? '' });
     new CfnOutput(this, 'SendQueueUrl', { value: this.sendQueue.queueUrl });
+    new CfnOutput(this, 'EnqueueQueueUrl', { value: this.enqueueQueue.queueUrl });
     new CfnOutput(this, 'UnsubscribeSecretArn', { value: this.unsubscribeSecret.secretArn });
   }
 }

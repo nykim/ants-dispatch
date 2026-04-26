@@ -66,6 +66,82 @@ The default brand prefix is **ScientHouse** (configurable per build via
 | **Api**          | API Gateway + WAF + 8 Lambdas + EventBridge Scheduler + `worker-dispatch`        |
 | **Edge**         | CloudFront distribution + ACM cert (single origin fronts SPA + buckets + API)    |
 
+### Scaling to tens of thousands of recipients per send
+
+Out of the box this app targets ~10K-recipient campaigns. The pipeline below
+documents what's already in place to push that to 50K+ and what to tune as
+you grow. Numbers assume a single tenant; multi-tenancy needs separate
+quotas/accounts.
+
+**Send-time fan-out is fully async.** `POST /admin/campaigns/{id}/send` no
+longer materializes the audience inline — it claims the campaign as
+`queueing`, drops a single `{campaignId}` message into the **enqueue queue**,
+and returns. The dedicated **worker-enqueue Lambda** (15-minute timeout)
+consumes that message and runs the heavy work: audience materialize → 25-row
+DynamoDB `BatchWrite` loop for RCPT rows → 10-message `SendMessageBatch`
+loop into the **send queue**. This decouples API Gateway's 29s ceiling from
+the size of the audience and lets a 50K-row campaign finish enqueue in a
+few minutes rather than timing out.
+
+**SQS payloads are slim.** Each per-recipient message in the send queue
+carries only `{campaignId, email}` (~80 bytes). `worker-send` pulls the
+campaign's `subject` + `html` once per Lambda instance from the META row
+(60s module-level cache) and renders the unsubscribe + view-in-browser
+links per recipient. This keeps every batch under SQS's 256 KB ceiling
+even with large HTML bodies and removes a multiplier on enqueue latency.
+
+**SES is the real throughput cap.** Default sandbox is 200/day at 14/sec —
+unusable for production. Once the account is moved to production access the
+starting tier is typically 50K/day at 14/sec; ask AWS for a quota increase
+to ~50–200/sec before the first big send. At 100/sec, 50,000 sends finish in
+about 8.5 minutes. Track `Reputation/Bounce` and `Reputation/Complaint` on
+the configuration set; a spike pauses sending automatically.
+
+**Lambda concurrency.** `worker-send` has no reserved concurrency, so it
+scales up to the account-wide unreserved pool (default 1,000). On a fresh
+account that pool may be smaller — request an increase if you observe
+throttling on the SQS event source. `worker-enqueue` is intentionally
+serial (SQS `batchSize: 1` plus a campaign-status idempotency check) so
+two sends of the same campaign can't double-enqueue recipients.
+
+**DynamoDB hot-partition risk.** Every send/open/click/bounce/unsubscribe
+event touches the same `CAMPAIGN#{id}/STATS` item. DDB caps a single
+partition at ~1,000 WCU/sec, and a sustained burst of 50K events arriving
+within ~1 minute can throttle. DDB retries internally so counts won't be
+lost, but worker-events latency will spike. If you see this, shard the
+counter into N items (`STATS#0`..`STATS#9`) and sum at read time. The
+recipient rows (`RCPT#{email}`) are already well-distributed across
+partitions because the email is in the SK.
+
+**Retry / DLQ topology.**
+
+| Queue          | Visibility | maxReceive | DLQ                  |
+|----------------|------------|------------|----------------------|
+| `enqueue`      | 15 min     | 2          | `enqueue-dlq` (14d)  |
+| `send`         | 60 s       | 5          | `send-dlq` (14d)     |
+| `import` (CSV) | …          | …          | `import-dlq`         |
+
+The enqueue queue's low retry count is deliberate: re-running materialize
+after a partial enqueue would risk duplicate sends. The send queue's count
+is higher because each retry only affects one recipient and SES tolerates
+brief outages.
+
+**What to revisit before pushing past 100K.**
+
+- Pre-warm SES (gradual ramp over a few campaigns) and request a higher
+  per-second tier.
+- Shard the campaign STATS counter (see above).
+- Move the `unsubscribeSecret` env-var injection in CDK to a runtime fetch
+  (`Secret.fromSecretCompleteArn` + cache); the current `unsafeUnwrap()`
+  bakes the secret into the Lambda template.
+- Reserve concurrency on `worker-send` so a noisy neighbor in the same
+  account can't crowd it out — requires raising the account-level
+  unreserved concurrency floor (currently the deploy can't reserve any
+  slots without bumping that quota).
+- Consider an SES Configuration Set sending pool with dedicated IPs once
+  monthly volume crosses ~500K — improves deliverability and isolates
+  reputation from shared-IP traffic.
+
 ### Repo layout
 
 ```

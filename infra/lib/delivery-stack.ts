@@ -21,6 +21,7 @@ export interface DeliveryStackProps extends StackProps {
   config: DispatchConfig;
   table: Table;
   sendQueue: Queue;
+  enqueueQueue: Queue;
   unsubscribeSecret: Secret;
 }
 
@@ -51,7 +52,7 @@ export class DeliveryStack extends Stack {
 
   constructor(scope: Construct, id: string, props: DeliveryStackProps) {
     super(scope, id, props);
-    const { config, table, sendQueue, unsubscribeSecret } = props;
+    const { config, table, sendQueue, enqueueQueue, unsubscribeSecret } = props;
     const repoRoot = path.resolve(__dirname, '../..');
     const sendingDomain = config.sendingDomain;
     const publicBaseUrl = `https://${config.publicHost}`;
@@ -157,10 +158,51 @@ export class DeliveryStack extends Stack {
       }),
     );
 
+    // worker-enqueue: SQS-triggered, one campaign per message. Materializes
+    // the audience, writes RCPT rows, and pushes per-recipient send messages.
+    // 15-min timeout so 50K-row campaigns finish inside one invocation.
+    // The SQS event source's batchSize=1 + the campaign-status idempotency
+    // check in the handler give us the "one campaign at a time" guarantee
+    // without needing reservedConcurrentExecutions (which would require an
+    // account-level concurrency-quota raise).
+    const workerEnqueue = new NodejsFunction(this, 'WorkerEnqueueFn', {
+      entry: path.resolve(repoRoot, 'services/worker-enqueue/src/index.ts'),
+      handler: 'handler',
+      runtime: Runtime.NODEJS_20_X,
+      architecture: Architecture.ARM_64,
+      memorySize: 1024,
+      timeout: Duration.minutes(15),
+      tracing: Tracing.ACTIVE,
+      logRetention: RetentionDays.ONE_MONTH,
+      loggingFormat: LoggingFormat.JSON,
+      depsLockFilePath: path.resolve(repoRoot, 'package-lock.json'),
+      projectRoot: repoRoot,
+      bundling: {
+        minify: true,
+        sourceMap: true,
+        target: 'node20',
+        externalModules: ['@aws-sdk/*'],
+      },
+      environment: {
+        ENV_NAME: config.envName,
+        TABLE_NAME: table.tableName,
+        SEND_QUEUE_URL: sendQueue.queueUrl,
+      },
+    });
+    table.grantReadWriteData(workerEnqueue);
+    sendQueue.grantSendMessages(workerEnqueue);
+    workerEnqueue.addEventSource(
+      new SqsEventSource(enqueueQueue, {
+        batchSize: 1,
+        reportBatchItemFailures: true,
+      }),
+    );
+
     new CfnOutput(this, 'SendingDomain', { value: sendingDomain });
     new CfnOutput(this, 'ConfigSetName', { value: this.configSet.name! });
     new CfnOutput(this, 'SesEventsTopicArn', { value: this.eventsTopic.topicArn });
     new CfnOutput(this, 'WorkerSendFnName', { value: this.workerSend.functionName });
+    new CfnOutput(this, 'WorkerEnqueueFnName', { value: workerEnqueue.functionName });
     new CfnOutput(this, 'FromAddress', { value: this.fromAddress });
   }
 }

@@ -1,7 +1,7 @@
 import type { SQSHandler, SQSBatchResponse, SQSRecord } from 'aws-lambda';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { createUnsubscribeToken } from '../../../packages/shared/src/unsubscribe';
 import { createViewToken } from '../../../packages/shared/src/viewInBrowser';
 import {
@@ -26,11 +26,36 @@ interface SendJob {
   campaignId: string;
   email: string;
   name?: string;
+  /** Test sends bypass the per-recipient DDB write and carry their own subject
+   *  + html inline because no CAMPAIGN#{id}#META row exists for them. Real
+   *  campaign sends omit these and the worker pulls them from META. */
+  test?: boolean;
+  subject?: string;
+  html?: string;
+}
+
+interface CampaignContent {
   subject: string;
   html: string;
-  /** Test sends bypass the per-recipient DDB write — they aren't tied to a
-   *  real campaign and we don't want them polluting STATS or RCPT rows. */
-  test?: boolean;
+}
+
+const CAMPAIGN_TTL_MS = 60_000;
+const cachedCampaigns = new Map<string, { at: number; content: CampaignContent }>();
+
+async function loadCampaignContent(campaignId: string): Promise<CampaignContent> {
+  const now = Date.now();
+  const hit = cachedCampaigns.get(campaignId);
+  if (hit && now - hit.at < CAMPAIGN_TTL_MS) return hit.content;
+  const res = await ddb.send(
+    new GetCommand({ TableName: TABLE, Key: { PK: `CAMPAIGN#${campaignId}`, SK: 'META' } }),
+  );
+  if (!res.Item) throw new Error(`Campaign ${campaignId} not found`);
+  const content: CampaignContent = {
+    subject: typeof res.Item.subject === 'string' ? res.Item.subject : '',
+    html: typeof res.Item.html === 'string' ? res.Item.html : '',
+  };
+  cachedCampaigns.set(campaignId, { at: now, content });
+  return content;
 }
 
 /**
@@ -55,6 +80,16 @@ export const handler: SQSHandler = async (event) => {
 
 async function processRecord(record: SQSRecord): Promise<void> {
   const job = JSON.parse(record.body) as SendJob;
+  let subject: string;
+  let html: string;
+  if (job.test) {
+    subject = job.subject ?? '';
+    html = job.html ?? '';
+  } else {
+    const content = await loadCampaignContent(job.campaignId);
+    subject = content.subject;
+    html = content.html;
+  }
   const token = createUnsubscribeToken(UNSUB_SECRET, job.campaignId, job.email);
   const unsubUrl = `${PUBLIC_BASE_URL}/public/u?c=${encodeURIComponent(job.campaignId)}&e=${encodeURIComponent(
     job.email,
@@ -75,8 +110,8 @@ async function processRecord(record: SQSRecord): Promise<void> {
   // resolve them — omit the view-in-browser bar to avoid a dead link.
   const viewBarHtml = job.test ? '' : renderViewInBrowserBar(viewUrl);
   const viewBarText = job.test ? '' : `View in browser: ${viewUrl}\n\n`;
-  const finalHtml = viewBarHtml + job.html + renderFooterHtml(settings, unsubUrl);
-  const finalText = viewBarText + stripHtml(job.html) + renderFooterText(settings, unsubUrl);
+  const finalHtml = viewBarHtml + html + renderFooterHtml(settings, unsubUrl);
+  const finalText = viewBarText + stripHtml(html) + renderFooterText(settings, unsubUrl);
 
   const res = await ses.send(
     new SendEmailCommand({
@@ -89,7 +124,7 @@ async function processRecord(record: SQSRecord): Promise<void> {
       ],
       Content: {
         Simple: {
-          Subject: { Data: job.subject, Charset: 'UTF-8' },
+          Subject: { Data: subject, Charset: 'UTF-8' },
           Body: {
             Html: { Data: finalHtml, Charset: 'UTF-8' },
             Text: { Data: finalText, Charset: 'UTF-8' },

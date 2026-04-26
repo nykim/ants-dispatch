@@ -30,6 +30,7 @@ export interface ApiStackProps extends StackProps {
   archiveBucket: Bucket;
   importsBucket: Bucket;
   sendQueue: Queue;
+  enqueueQueue: Queue;
   unsubscribeSecret: Secret;
 }
 
@@ -45,6 +46,7 @@ export class ApiStack extends Stack {
       archiveBucket,
       importsBucket,
       sendQueue,
+      enqueueQueue,
       unsubscribeSecret,
     } = props;
 
@@ -124,15 +126,15 @@ export class ApiStack extends Stack {
       entry: path.resolve(repoRoot, 'services/api-admin/src/campaigns.ts'),
       handler: 'handler',
       memorySize: 1024,
-      timeout: Duration.seconds(60),
+      timeout: Duration.seconds(30),
       environment: {
         ENV_NAME: config.envName,
         TABLE_NAME: table.tableName,
-        SEND_QUEUE_URL: sendQueue.queueUrl,
+        ENQUEUE_QUEUE_URL: enqueueQueue.queueUrl,
       },
     });
     table.grantReadWriteData(campaignsFn);
-    sendQueue.grantSendMessages(campaignsFn);
+    enqueueQueue.grantSendMessages(campaignsFn);
     // Scheduled-send wiring is appended below — the schedule group + role +
     // dispatch Lambda are created in the next block so we can't reference
     // them at construction time.
@@ -221,17 +223,17 @@ export class ApiStack extends Stack {
       ...baseFnProps,
       entry: path.resolve(repoRoot, 'services/worker-dispatch/src/index.ts'),
       handler: 'handler',
-      memorySize: 1024,
-      timeout: Duration.seconds(60),
+      memorySize: 512,
+      timeout: Duration.seconds(30),
       environment: {
         ENV_NAME: config.envName,
         TABLE_NAME: table.tableName,
-        SEND_QUEUE_URL: sendQueue.queueUrl,
+        ENQUEUE_QUEUE_URL: enqueueQueue.queueUrl,
         SCHEDULE_GROUP_NAME: scheduleGroup.name!,
       },
     });
     table.grantReadWriteData(dispatchFn);
-    sendQueue.grantSendMessages(dispatchFn);
+    enqueueQueue.grantSendMessages(dispatchFn);
     // The worker self-deletes its EventBridge schedule after dispatch.
     dispatchFn.addToRolePolicy(new PolicyStatement({
       effect: Effect.ALLOW,
