@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   getCampaign,
   getType,
+  listCampaignLinks,
   listCampaignRecipients,
   type Campaign,
+  type CampaignLink,
   type CampaignRecipient,
 } from '../api/endpoints';
 import { Metric } from '../components/metrics/Metric';
@@ -66,6 +68,11 @@ function CampaignDetailPage() {
   const delivered = stats.delivered ?? 0;
   const opened = stats.opened ?? 0;
   const clicked = stats.clicked ?? 0;
+  // Headline rates use unique-recipient counters when available. Older
+  // campaigns sent before unique tracking shipped fall back to total events,
+  // which can show a rate above 100% from multi-opens / image-proxy reloads.
+  const uniqueOpened = stats.uniqueOpened ?? opened;
+  const uniqueClicked = stats.uniqueClicked ?? clicked;
   const unsubscribed = stats.unsubscribed ?? 0;
   const bounced = stats.bounced ?? 0;
 
@@ -133,14 +140,32 @@ function CampaignDetailPage() {
         />
         <Metric
           label="Opens"
-          value={formatNumber(opened)}
-          delta={`${formatPct(opened, delivered)} open rate`}
+          value={formatNumber(uniqueOpened)}
+          delta={
+            <>
+              {formatPct(uniqueOpened, delivered)} open rate
+              {opened > uniqueOpened && (
+                <span className="muted" style={{ marginLeft: 6 }}>
+                  · {formatNumber(opened)} total
+                </span>
+              )}
+            </>
+          }
           deltaDir="up"
         />
         <Metric
           label="Clicks"
-          value={formatNumber(clicked)}
-          delta={`${formatPct(clicked, delivered)} CTR`}
+          value={formatNumber(uniqueClicked)}
+          delta={
+            <>
+              {formatPct(uniqueClicked, delivered)} CTR
+              {clicked > uniqueClicked && (
+                <span className="muted" style={{ marginLeft: 6 }}>
+                  · {formatNumber(clicked)} total
+                </span>
+              )}
+            </>
+          }
           deltaDir="up"
         />
         <Metric
@@ -161,7 +186,7 @@ function CampaignDetailPage() {
         onRangeChange={setRange}
       />
 
-      <TopLinks rcpts={recipientsQ.data?.items ?? []} totalClicks={clicked} loading={recipientsQ.isLoading} />
+      <TopLinks campaignId={data.id} fallbackRcpts={recipientsQ.data?.items ?? []} totalClicks={clicked} />
       {bounced > 0 && (
         <div className="muted" style={{ fontSize: 12 }}>
           {formatNumber(bounced)} bounced ({formatPct(bounced, recipients)})
@@ -341,40 +366,55 @@ function EngagementOverTime({
 // ── Top links clicked ─────────────────────────────────────────────────────
 
 function TopLinks({
-  rcpts,
+  campaignId,
+  fallbackRcpts,
   totalClicks,
-  loading,
 }: {
-  rcpts: CampaignRecipient[];
+  campaignId: string;
+  fallbackRcpts: CampaignRecipient[];
   totalClicks: number;
-  loading: boolean;
 }) {
-  // Group recipients by their `lastClickUrl`. SES Click events overwrite the
-  // RCPT row's lastClickUrl on each click, so this counts unique recipients
-  // per URL (their *most recent* click destination), not total click volume.
-  // For a fully accurate per-URL aggregation we'd need a `LINK#` counter row
-  // updated by the events worker — out of scope here.
-  const rows = useMemo(() => {
+  const linksQ = useQuery({
+    queryKey: ['campaign', campaignId, 'links'],
+    queryFn: () => listCampaignLinks(campaignId),
+  });
+
+  // Endpoint-backed rows are authoritative — they have both total clicks and
+  // unique-recipient clicks per URL. Campaigns sent before LINK#-row tracking
+  // shipped will return an empty list; in that case we fall back to the old
+  // recipient-row aggregation (which only reflects `lastClickUrl` per
+  // recipient) and display total only.
+  const apiRows: (CampaignLink & { _legacy?: false })[] = linksQ.data?.items ?? [];
+  const useLegacy = !linksQ.isLoading && apiRows.length === 0;
+
+  const legacyRows = useMemo(() => {
+    if (!useLegacy) return [];
     const counts = new Map<string, number>();
-    for (const r of rcpts) {
+    for (const r of fallbackRcpts) {
       if (!r.lastClickUrl) continue;
       counts.set(r.lastClickUrl, (counts.get(r.lastClickUrl) ?? 0) + 1);
     }
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
-      .map(([url, count]) => ({ url, count }));
-  }, [rcpts]);
+      .map(([url, count]) => ({ url, clicks: count, uniqueClicks: count }));
+  }, [fallbackRcpts, useLegacy]);
 
-  const denom = totalClicks || rows.reduce((s, r) => s + r.count, 0);
+  const rows = useLegacy ? legacyRows : apiRows.slice(0, 10);
+  const denom = totalClicks || rows.reduce((s, r) => s + r.clicks, 0);
 
   return (
     <div className="card">
       <div className="card-header">
         <h3 className="serif">Top links clicked</h3>
+        {useLegacy && rows.length > 0 && (
+          <span className="muted" style={{ fontSize: 12, marginLeft: 8 }}>
+            (legacy aggregation — last-clicked link per recipient)
+          </span>
+        )}
       </div>
       <div className="card-body" style={{ padding: 0 }}>
-        {loading ? (
+        {linksQ.isLoading ? (
           <p className="muted" style={{ padding: 24, textAlign: 'center' }}>Loading…</p>
         ) : rows.length === 0 ? (
           <p className="muted" style={{ padding: 24, textAlign: 'center' }}>
@@ -386,7 +426,8 @@ function TopLinks({
               <tr>
                 <th>URL</th>
                 <th className="text-right">Clicks</th>
-                <th className="text-right">%</th>
+                <th className="text-right">Unique</th>
+                <th className="text-right">% of total</th>
               </tr>
             </thead>
             <tbody>
@@ -409,10 +450,13 @@ function TopLinks({
                     </a>
                   </td>
                   <td className="text-right mono-sm" style={{ whiteSpace: 'nowrap' }}>
-                    {formatNumber(l.count)}
+                    {formatNumber(l.clicks)}
+                  </td>
+                  <td className="text-right mono-sm" style={{ whiteSpace: 'nowrap' }}>
+                    {useLegacy ? '—' : formatNumber(l.uniqueClicks)}
                   </td>
                   <td className="text-right mono-sm muted" style={{ whiteSpace: 'nowrap' }}>
-                    {denom ? `${Math.round((l.count / denom) * 100)}%` : '—'}
+                    {denom ? `${Math.round((l.clicks / denom) * 100)}%` : '—'}
                   </td>
                 </tr>
               ))}

@@ -55,6 +55,8 @@ export const handler: APIGatewayProxyHandler = async (event) => {
         return ok(await getCampaign(path(event, 'id')));
       case 'GET /admin/campaigns/{id}/recipients':
         return ok(await listCampaignRecipients(path(event, 'id')));
+      case 'GET /admin/campaigns/{id}/links':
+        return ok(await listCampaignLinks(path(event, 'id')));
       case 'DELETE /admin/campaigns/{id}':
         return ok(await deleteCampaign(path(event, 'id')));
       case 'POST /admin/campaigns/{id}/send':
@@ -202,6 +204,45 @@ async function listCampaignRecipients(
     cursor = truncated ? undefined : res.LastEvaluatedKey;
   } while (cursor);
   return { items, truncated };
+}
+
+/**
+ * Per-URL click stats for a campaign. Backed by `LINK#{hash}` rows written
+ * by worker-events; unique vs. total clicks per link.
+ */
+interface CampaignLink {
+  url: string;
+  clicks: number;
+  uniqueClicks: number;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+}
+
+async function listCampaignLinks(id: string): Promise<{ items: CampaignLink[] }> {
+  const items: CampaignLink[] = [];
+  let cursor: Record<string, unknown> | undefined;
+  do {
+    const res = await ddb.send(
+      new QueryCommand({
+        TableName: TABLE,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
+        ExpressionAttributeValues: { ':pk': `CAMPAIGN#${id}`, ':sk': 'LINK#' },
+        ExclusiveStartKey: cursor,
+      }),
+    );
+    for (const it of res.Items ?? []) {
+      items.push({
+        url: typeof it.url === 'string' ? it.url : '',
+        clicks: typeof it.clicks === 'number' ? it.clicks : 0,
+        uniqueClicks: typeof it.uniqueClicks === 'number' ? it.uniqueClicks : 0,
+        firstSeenAt: typeof it.firstSeenAt === 'string' ? it.firstSeenAt : undefined,
+        lastSeenAt: typeof it.lastSeenAt === 'string' ? it.lastSeenAt : undefined,
+      });
+    }
+    cursor = res.LastEvaluatedKey;
+  } while (cursor);
+  items.sort((a, b) => b.clicks - a.clicks || b.uniqueClicks - a.uniqueClicks);
+  return { items };
 }
 
 async function getCampaign(id: string): Promise<CampaignRecord & { stats: Record<string, number> }> {

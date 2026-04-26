@@ -162,14 +162,14 @@ function HistoryList() {
           return ((a.recipients ?? 0) - (b.recipients ?? 0)) * dir;
         case 'openRate':
           return (
-            (rate(a.stats?.opened, a.stats?.delivered) -
-              rate(b.stats?.opened, b.stats?.delivered)) *
+            (rate(a.stats?.uniqueOpened ?? a.stats?.opened, a.stats?.delivered) -
+              rate(b.stats?.uniqueOpened ?? b.stats?.opened, b.stats?.delivered)) *
             dir
           );
         case 'ctr':
           return (
-            (rate(a.stats?.clicked, a.stats?.delivered) -
-              rate(b.stats?.clicked, b.stats?.delivered)) *
+            (rate(a.stats?.uniqueClicked ?? a.stats?.clicked, a.stats?.delivered) -
+              rate(b.stats?.uniqueClicked ?? b.stats?.clicked, b.stats?.delivered)) *
             dir
           );
       }
@@ -189,23 +189,23 @@ function HistoryList() {
     const totals = sent.reduce(
       (acc, c) => {
         acc.delivered += c.stats?.delivered ?? 0;
-        acc.opened += c.stats?.opened ?? 0;
-        acc.clicked += c.stats?.clicked ?? 0;
+        acc.uniqueOpened += c.stats?.uniqueOpened ?? c.stats?.opened ?? 0;
+        acc.uniqueClicked += c.stats?.uniqueClicked ?? c.stats?.clicked ?? 0;
         acc.unsubscribed += c.stats?.unsubscribed ?? 0;
         acc.bounced += c.stats?.bounced ?? 0;
         return acc;
       },
-      { delivered: 0, opened: 0, clicked: 0, unsubscribed: 0, bounced: 0 },
+      { delivered: 0, uniqueOpened: 0, uniqueClicked: 0, unsubscribed: 0, bounced: 0 },
     );
     // Sparklines plot per-campaign rates oldest-first (the listing is sent-desc).
     const openSpark = sent
       .slice()
       .reverse()
-      .map((c) => rate(c.stats?.opened, c.stats?.delivered) * 100);
+      .map((c) => rate(c.stats?.uniqueOpened ?? c.stats?.opened, c.stats?.delivered) * 100);
     const clickSpark = sent
       .slice()
       .reverse()
-      .map((c) => rate(c.stats?.clicked, c.stats?.delivered) * 100);
+      .map((c) => rate(c.stats?.uniqueClicked ?? c.stats?.clicked, c.stats?.delivered) * 100);
     return { totals, openSpark, clickSpark, count: sent.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusQueries[0]?.data, typeFilter]);
@@ -223,13 +223,13 @@ function HistoryList() {
       <div className="grid grid-4">
         <Metric
           label={`Avg. open rate${typeFilter !== 'all' ? ` · ${typeById.get(typeFilter)?.name ?? ''}` : ''}`}
-          value={formatPct(aggregates.totals.opened, aggregates.totals.delivered)}
+          value={formatPct(aggregates.totals.uniqueOpened, aggregates.totals.delivered)}
           spark={<Sparkline values={aggregates.openSpark} />}
           onClick={() => setTrendMetric('open')}
         />
         <Metric
           label="Avg. click-through"
-          value={formatPct(aggregates.totals.clicked, aggregates.totals.delivered)}
+          value={formatPct(aggregates.totals.uniqueClicked, aggregates.totals.delivered)}
           spark={<Sparkline values={aggregates.clickSpark} />}
           onClick={() => setTrendMetric('click')}
         />
@@ -458,9 +458,9 @@ function CampaignRow({
         {isSent ? (
           <div className="stack" style={{ alignItems: 'flex-end', gap: 0 }}>
             <span className="mono-sm">
-              {formatPct(c.stats?.opened ?? 0, c.stats?.delivered ?? 0)}
+              {formatPct(c.stats?.uniqueOpened ?? c.stats?.opened ?? 0, c.stats?.delivered ?? 0)}
             </span>
-            <OpenBar rate={rate(c.stats?.opened, c.stats?.delivered)} />
+            <OpenBar rate={rate(c.stats?.uniqueOpened ?? c.stats?.opened, c.stats?.delivered)} />
           </div>
         ) : (
           <span className="faint">—</span>
@@ -468,7 +468,7 @@ function CampaignRow({
       </td>
       <td className="text-right mono-sm">
         {isSent ? (
-          formatPct(c.stats?.clicked ?? 0, c.stats?.delivered ?? 0)
+          formatPct(c.stats?.uniqueClicked ?? c.stats?.clicked ?? 0, c.stats?.delivered ?? 0)
         ) : (
           <span className="faint">—</span>
         )}
@@ -561,11 +561,13 @@ function formatRelative(ms: number): string {
 
 type MetricKey = 'open' | 'click' | 'unsub' | 'bounce';
 
-const METRIC_META: Record<MetricKey, { title: string; numerator: keyof NonNullable<Campaign['stats']> }> = {
-  open: { title: 'Open rate', numerator: 'opened' },
-  click: { title: 'Click-through rate', numerator: 'clicked' },
-  unsub: { title: 'Unsubscribe rate', numerator: 'unsubscribed' },
-  bounce: { title: 'Bounce rate', numerator: 'bounced' },
+type CampaignStats = NonNullable<Campaign['stats']>;
+
+const METRIC_META: Record<MetricKey, { title: string; numeratorOf: (s: CampaignStats | undefined) => number | undefined }> = {
+  open: { title: 'Open rate', numeratorOf: (s) => s?.uniqueOpened ?? s?.opened },
+  click: { title: 'Click-through rate', numeratorOf: (s) => s?.uniqueClicked ?? s?.clicked },
+  unsub: { title: 'Unsubscribe rate', numeratorOf: (s) => s?.unsubscribed },
+  bounce: { title: 'Bounce rate', numeratorOf: (s) => s?.bounced },
 };
 
 function MetricTrendModal({
@@ -589,7 +591,7 @@ function MetricTrendModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const { title, numerator } = METRIC_META[metric];
+  const { title, numeratorOf } = METRIC_META[metric];
   const filtered = useMemo(() => {
     const sent = typeFilter === 'all' ? campaigns : campaigns.filter((c) => c.typeId === typeFilter);
     // Oldest → newest. Skip campaigns with no delivered stats since the rate
@@ -603,9 +605,9 @@ function MetricTrendModal({
     () =>
       filtered.map((c, i) => ({
         h: i + 1,
-        cumulative: rate(c.stats?.[numerator], c.stats?.delivered) * 100,
+        cumulative: rate(numeratorOf(c.stats), c.stats?.delivered) * 100,
       })),
-    [filtered, numerator],
+    [filtered, numeratorOf],
   );
 
   const summary = useMemo(() => {

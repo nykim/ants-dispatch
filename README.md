@@ -159,6 +159,57 @@ web/                  Vite + React SPA
 docs/                 Architecture notes
 ```
 
+## Cost
+
+Rough monthly estimate at **50,000 sends** in `us-east-1` (on-demand /
+pay-per-use pricing, single environment, ~5 admin users, 50 KB average HTML
+body, ~25% open rate, ~5% click rate):
+
+| Service                  | What's billed                       | Est. cost |
+|--------------------------|-------------------------------------|----------:|
+| SES v2                   | 50K outbound emails @ $0.10/1K      |     $5.00 |
+| AWS WAF                  | Web ACL + ~3 rules                  |     $8.00 |
+| CloudWatch + X-Ray       | ~130K traces + log ingest           |     $1.00 |
+| CloudFront               | ~5 GB (mostly view-in-browser)      |     $0.60 |
+| DynamoDB (on-demand)     | ~250K writes + 100K reads           |     $0.50 |
+| Secrets Manager          | 1 secret + API calls                |     $0.45 |
+| SNS                      | ~250K Lambda deliveries             |     $0.30 |
+| API Gateway (REST)       | ~75K requests                       |     $0.30 |
+| Lambda                   | ~350K invocations across all fns    |     $0.30 |
+| S3                       | ~100 MB storage + GETs              |     $0.20 |
+| SQS                      | ~150K ops across all queues         |     $0.10 |
+| EventBridge Scheduler    | A handful of scheduled sends        |    <$0.10 |
+| Cognito                  | ~5 monthly active admin users       |        $0 |
+| Route 53 / ACM           | External DNS / DNS-validated cert   |        $0 |
+| **Total**                |                                     | **~$16**  |
+
+Per-1K-send unit cost ≈ **$0.32** at this volume, dominated by SES +
+WAF amortization. Things worth knowing:
+
+- **WAF is half the fixed cost** ($8/$16). If you don't need it for
+  compliance/reputation, drop it and replace with API Gateway per-IP
+  throttling — that path is free and shaves the bill to ~$8/month.
+- **SES is the only volume-linear cost worth caring about.** At 100K
+  sends/month → ~$21; at 500K → ~$66. Everything else stays roughly
+  flat until ~5–10× this scale.
+- **Apple Mail Privacy Protection** roughly 2–3× the Open events SES
+  emits (and therefore worker-events Lambda + DDB writes). The estimate
+  already bakes in ~5 events per send.
+- **Dedicated SES IPs** ($24.95/month each) only matter at sustained
+  100K+/month or when reputation isolation is required. Not needed at
+  50K.
+- **AWS free tier** covers a meaningful chunk of Lambda, DDB, and API
+  Gateway in your first 12 months on AWS — first-year cost is closer to
+  **$10–12**.
+- **CloudFront cost scales with view-in-browser usage**, not with sends.
+  A widely-shared message link could push CloudFront higher than the
+  per-recipient render estimate, but it's still tiny compared to SES.
+
+This is AWS infra only — domain registration, deliverability monitoring
+tools, and any human ops time are extra. Multi-environment (dev + prod)
+roughly doubles the fixed costs (WAF, Secrets Manager) but not the
+volume-linear ones.
+
 ## Prerequisites
 
 - **Node.js 20+** (`node -v`)

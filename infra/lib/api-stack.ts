@@ -380,6 +380,9 @@ export class ApiStack extends Stack {
     campaignById
       .addResource('recipients')
       .addMethod('GET', new LambdaIntegration(campaignsFn), authOpts);
+    campaignById
+      .addResource('links')
+      .addMethod('GET', new LambdaIntegration(campaignsFn), authOpts);
 
     const tags = admin.addResource('tags');
     tags.addMethod('GET', new LambdaIntegration(audienceFn), authOpts);

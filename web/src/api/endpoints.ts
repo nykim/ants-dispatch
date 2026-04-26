@@ -65,8 +65,13 @@ export interface Campaign {
   scheduleAt?: string;
   stats?: {
     delivered?: number;
+    /** Total Open events from SES (multi-device opens, prefetchers, scanners). */
     opened?: number;
+    /** Distinct recipients who opened at least once. */
+    uniqueOpened?: number;
     clicked?: number;
+    /** Distinct recipients who clicked at least one link. */
+    uniqueClicked?: number;
     bounced?: number;
     complained?: number;
     unsubscribed?: number;
@@ -220,6 +225,17 @@ export const listCampaignRecipients = (id: string) =>
   api<{ items: CampaignRecipient[]; truncated: boolean }>(
     `/admin/campaigns/${id}/recipients`,
   );
+
+export interface CampaignLink {
+  url: string;
+  clicks: number;
+  uniqueClicks: number;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+}
+
+export const listCampaignLinks = (id: string) =>
+  api<{ items: CampaignLink[] }>(`/admin/campaigns/${id}/links`);
 
 // ── Assets (newsletter images) ──────────────────────────────────────────────
 
