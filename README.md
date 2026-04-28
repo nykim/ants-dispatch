@@ -145,6 +145,51 @@ brief outages.
   monthly volume crosses ~500K — improves deliverability and isolates
   reputation from shared-IP traffic.
 
+### Per-newsletter unsubscribes
+
+Suppressions are layered. Both layers share the `SUPP#<email>` partition:
+
+| Scope | Triggered by | Effect |
+|---|---|---|
+| `TYPE#GLOBAL` | hard bounces, complaints, operator stop-everything | Blocks every send to this email |
+| `TYPE#<typeId>` | footer / native-client unsubscribe link, operator per-type add | Blocks only campaigns whose `typeId` matches |
+
+A send is dropped if either layer matches. CONTACT PROFILE rows carry
+`suppressedGlobal: bool` and `suppressedTypes: StringSet<typeId>`
+denormalized hints so the audience filter remains a single GSI scan.
+The unsubscribe confirmation page names the type and offers a
+secondary "Unsubscribe from everything" button that escalates to
+`TYPE#GLOBAL`. SES bounces and complaints always write `TYPE#GLOBAL`
+because reputation signals are per-domain, not per-newsletter.
+
+### Resilience to email security scanners
+
+Enterprise mail-security gateways (Microsoft Defender Safe Links,
+Proofpoint URL Defense, Mimecast, Barracuda, Cisco Talos, etc.) crawl
+every link in inbound mail before delivery. Untreated, those crawls
+inflate Open / Click stats and — worst of all — fire RFC 8058 one-click
+unsubscribes that opt real subscribers out without their action.
+
+Three defenses, applied unconditionally:
+
+1. **No `List-Unsubscribe-Post: One-Click` header.** Native client
+   "Unsubscribe" buttons still surface via the bare `List-Unsubscribe`
+   URL, but the URL routes through our two-step confirmation page
+   instead of accepting unattended POSTs.
+2. **Two-step unsubscribe.** `GET /public/u` renders a "Yes,
+   unsubscribe" button and writes nothing. Bare `POST /public/u`
+   returns `200 OK` and writes nothing. Only `POST /public/u?confirm=1`
+   (the form submission from the confirmation page) writes the SUPP
+   row.
+3. **Scanner detection in `worker-events`.** Open and Click events
+   that arrive within 30 s of the recipient's `deliveredAt`/`queuedAt`
+   are dropped (real users don't open mail in <30 s). Click events
+   whose SES `userAgent` matches a known scanner regex (Defender,
+   Proofpoint, Mimecast, Barracuda, Cisco Talos, Sophos, Bitdefender,
+   Zscaler, headless browsers, `wget`/`curl`/`python-requests`, …) are
+   also dropped. Both filters fail open if the RCPT row is missing so
+   legitimate engagement is never silently lost.
+
 ### Repo layout
 
 ```
