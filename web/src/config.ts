@@ -26,4 +26,9 @@ export const config = {
     redirectUri: must('VITE_REDIRECT_URI', import.meta.env.VITE_REDIRECT_URI),
     scopes: ['openid', 'email', 'profile'],
   },
+  // Optional. Set the Cloudflare Turnstile *site* key (public, safe to ship
+  // in the bundle) at build time to enable the captcha on the public
+  // subscribe form. Without it the form still works — bot resistance falls
+  // back to honeypot + WAF rate-limit + double-opt-in confirmation email.
+  turnstileSiteKey: (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim(),
 };

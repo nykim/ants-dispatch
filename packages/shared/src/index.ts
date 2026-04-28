@@ -4,5 +4,6 @@ export * from './batch';
 export * from './audience';
 export * from './suppression';
 export * from './unsubscribe';
+export * from './subscribe-token';
 export * from './viewInBrowser';
 export * from './footer';

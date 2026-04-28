@@ -307,6 +307,45 @@ export class ApiStack extends Stack {
     table.grantReadData(viewFn);
     unsubscribeSecret.grantRead(viewFn);
 
+    // Public sign-up flow. Honeypot + optional Cloudflare Turnstile guard
+    // POST; confirmation email goes through SES (configuration-set tracked
+    // like a regular send so we get bounce/complaint feedback). Set
+    // TURNSTILE_SECRET in the Lambda env once you've created a Turnstile
+    // site (https://dash.cloudflare.com/?to=/:account/turnstile) — without
+    // it the captcha check is bypassed, which is fine for dev but should
+    // be set before going public.
+    const subscribeFn = new NodejsFunction(this, 'SubscribeFn', {
+      ...baseFnProps,
+      entry: path.resolve(repoRoot, 'services/api-public/src/subscribe.ts'),
+      handler: 'handler',
+      memorySize: 384,
+      timeout: Duration.seconds(15),
+      environment: {
+        ENV_NAME: config.envName,
+        TABLE_NAME: table.tableName,
+        UNSUB_SECRET: unsubscribeSecret.secretValue.unsafeUnwrap(),
+        PUBLIC_BASE_URL: `https://${config.publicHost}`,
+        FROM_ADDRESS: `Ants Dispatch <dispatch@${config.sendingDomain}>`,
+        CONFIG_SET_NAME: `nda-dispatch-${config.envName}`,
+        TURNSTILE_SECRET: process.env.TURNSTILE_SECRET ?? '',
+      },
+    });
+    table.grantReadWriteData(subscribeFn);
+    unsubscribeSecret.grantRead(subscribeFn);
+    subscribeFn.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+        resources: [
+          `arn:aws:ses:${this.region}:${this.account}:identity/*`,
+          `arn:aws:ses:${this.region}:${this.account}:configuration-set/nda-dispatch-${config.envName}`,
+        ],
+        conditions: {
+          StringLike: { 'ses:FromAddress': `*@${config.sendingDomain}` },
+        },
+      }),
+    );
+
     this.api = new RestApi(this, 'DispatchApi', {
       restApiName: `nda-dispatch-api-${config.envName}`,
       deployOptions: {
@@ -414,6 +453,11 @@ export class ApiStack extends Stack {
     const view = publicRoot.addResource('v');
     view.addMethod('GET', new LambdaIntegration(viewFn));
 
+    const subscribe = publicRoot.addResource('subscribe');
+    subscribe.addMethod('POST', new LambdaIntegration(subscribeFn));
+    subscribe.addResource('types').addMethod('GET', new LambdaIntegration(subscribeFn));
+    subscribe.addResource('confirm').addMethod('GET', new LambdaIntegration(subscribeFn));
+
     // WAF — REGIONAL ACL attached to the API stage. Protects both admin and
     // public routes, with an extra rate-limit scoped to /public/* since those
     // endpoints are unauthenticated.
@@ -493,6 +537,34 @@ export class ApiStack extends Stack {
           visibilityConfig: {
             cloudWatchMetricsEnabled: true,
             metricName: 'PublicRateLimit',
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          // Tighter cap on the sign-up endpoint specifically. Honeypot +
+          // Turnstile + email confirmation already gate writes, but a
+          // 60/5min/IP cap on POST /public/subscribe stops a script from
+          // burning through send-confirmation-email cost in a tight loop.
+          name: 'SubscribeRateLimit',
+          priority: 11,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: {
+              limit: 60,
+              aggregateKeyType: 'IP',
+              scopeDownStatement: {
+                byteMatchStatement: {
+                  fieldToMatch: { uriPath: {} },
+                  positionalConstraint: 'STARTS_WITH',
+                  searchString: `/${config.envName}/public/subscribe`,
+                  textTransformations: [{ priority: 0, type: 'LOWERCASE' }],
+                },
+              },
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: 'SubscribeRateLimit',
             sampledRequestsEnabled: true,
           },
         },

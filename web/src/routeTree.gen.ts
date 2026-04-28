@@ -9,8 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SubscribeRouteImport } from './routes/subscribe'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SubscribePendingRouteImport } from './routes/subscribe.pending'
+import { Route as SubscribeErrorRouteImport } from './routes/subscribe.error'
+import { Route as SubscribeConfirmedRouteImport } from './routes/subscribe.confirmed'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AppTypesRouteImport } from './routes/_app.types'
 import { Route as AppSubscribersRouteImport } from './routes/_app.subscribers'
@@ -22,6 +26,11 @@ import { Route as AppComposeRouteImport } from './routes/_app.compose'
 import { Route as AppTypesTypeIdRouteImport } from './routes/_app.types.$typeId'
 import { Route as AppHistoryCampaignIdRouteImport } from './routes/_app.history.$campaignId'
 
+const SubscribeRoute = SubscribeRouteImport.update({
+  id: '/subscribe',
+  path: '/subscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
@@ -30,6 +39,21 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SubscribePendingRoute = SubscribePendingRouteImport.update({
+  id: '/pending',
+  path: '/pending',
+  getParentRoute: () => SubscribeRoute,
+} as any)
+const SubscribeErrorRoute = SubscribeErrorRouteImport.update({
+  id: '/error',
+  path: '/error',
+  getParentRoute: () => SubscribeRoute,
+} as any)
+const SubscribeConfirmedRoute = SubscribeConfirmedRouteImport.update({
+  id: '/confirmed',
+  path: '/confirmed',
+  getParentRoute: () => SubscribeRoute,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
@@ -84,6 +108,7 @@ const AppHistoryCampaignIdRoute = AppHistoryCampaignIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/subscribe': typeof SubscribeRouteWithChildren
   '/compose': typeof AppComposeRoute
   '/help': typeof AppHelpRoute
   '/history': typeof AppHistoryRouteWithChildren
@@ -92,11 +117,15 @@ export interface FileRoutesByFullPath {
   '/subscribers': typeof AppSubscribersRoute
   '/types': typeof AppTypesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
+  '/subscribe/confirmed': typeof SubscribeConfirmedRoute
+  '/subscribe/error': typeof SubscribeErrorRoute
+  '/subscribe/pending': typeof SubscribePendingRoute
   '/history/$campaignId': typeof AppHistoryCampaignIdRoute
   '/types/$typeId': typeof AppTypesTypeIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/subscribe': typeof SubscribeRouteWithChildren
   '/compose': typeof AppComposeRoute
   '/help': typeof AppHelpRoute
   '/history': typeof AppHistoryRouteWithChildren
@@ -105,6 +134,9 @@ export interface FileRoutesByTo {
   '/subscribers': typeof AppSubscribersRoute
   '/types': typeof AppTypesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
+  '/subscribe/confirmed': typeof SubscribeConfirmedRoute
+  '/subscribe/error': typeof SubscribeErrorRoute
+  '/subscribe/pending': typeof SubscribePendingRoute
   '/history/$campaignId': typeof AppHistoryCampaignIdRoute
   '/types/$typeId': typeof AppTypesTypeIdRoute
 }
@@ -112,6 +144,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/subscribe': typeof SubscribeRouteWithChildren
   '/_app/compose': typeof AppComposeRoute
   '/_app/help': typeof AppHelpRoute
   '/_app/history': typeof AppHistoryRouteWithChildren
@@ -120,6 +153,9 @@ export interface FileRoutesById {
   '/_app/subscribers': typeof AppSubscribersRoute
   '/_app/types': typeof AppTypesRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
+  '/subscribe/confirmed': typeof SubscribeConfirmedRoute
+  '/subscribe/error': typeof SubscribeErrorRoute
+  '/subscribe/pending': typeof SubscribePendingRoute
   '/_app/history/$campaignId': typeof AppHistoryCampaignIdRoute
   '/_app/types/$typeId': typeof AppTypesTypeIdRoute
 }
@@ -127,6 +163,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/subscribe'
     | '/compose'
     | '/help'
     | '/history'
@@ -135,11 +172,15 @@ export interface FileRouteTypes {
     | '/subscribers'
     | '/types'
     | '/auth/callback'
+    | '/subscribe/confirmed'
+    | '/subscribe/error'
+    | '/subscribe/pending'
     | '/history/$campaignId'
     | '/types/$typeId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/subscribe'
     | '/compose'
     | '/help'
     | '/history'
@@ -148,12 +189,16 @@ export interface FileRouteTypes {
     | '/subscribers'
     | '/types'
     | '/auth/callback'
+    | '/subscribe/confirmed'
+    | '/subscribe/error'
+    | '/subscribe/pending'
     | '/history/$campaignId'
     | '/types/$typeId'
   id:
     | '__root__'
     | '/'
     | '/_app'
+    | '/subscribe'
     | '/_app/compose'
     | '/_app/help'
     | '/_app/history'
@@ -162,6 +207,9 @@ export interface FileRouteTypes {
     | '/_app/subscribers'
     | '/_app/types'
     | '/auth/callback'
+    | '/subscribe/confirmed'
+    | '/subscribe/error'
+    | '/subscribe/pending'
     | '/_app/history/$campaignId'
     | '/_app/types/$typeId'
   fileRoutesById: FileRoutesById
@@ -169,11 +217,19 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  SubscribeRoute: typeof SubscribeRouteWithChildren
   AuthCallbackRoute: typeof AuthCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/subscribe': {
+      id: '/subscribe'
+      path: '/subscribe'
+      fullPath: '/subscribe'
+      preLoaderRoute: typeof SubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app': {
       id: '/_app'
       path: ''
@@ -187,6 +243,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/subscribe/pending': {
+      id: '/subscribe/pending'
+      path: '/pending'
+      fullPath: '/subscribe/pending'
+      preLoaderRoute: typeof SubscribePendingRouteImport
+      parentRoute: typeof SubscribeRoute
+    }
+    '/subscribe/error': {
+      id: '/subscribe/error'
+      path: '/error'
+      fullPath: '/subscribe/error'
+      preLoaderRoute: typeof SubscribeErrorRouteImport
+      parentRoute: typeof SubscribeRoute
+    }
+    '/subscribe/confirmed': {
+      id: '/subscribe/confirmed'
+      path: '/confirmed'
+      fullPath: '/subscribe/confirmed'
+      preLoaderRoute: typeof SubscribeConfirmedRouteImport
+      parentRoute: typeof SubscribeRoute
     }
     '/auth/callback': {
       id: '/auth/callback'
@@ -307,9 +384,26 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface SubscribeRouteChildren {
+  SubscribeConfirmedRoute: typeof SubscribeConfirmedRoute
+  SubscribeErrorRoute: typeof SubscribeErrorRoute
+  SubscribePendingRoute: typeof SubscribePendingRoute
+}
+
+const SubscribeRouteChildren: SubscribeRouteChildren = {
+  SubscribeConfirmedRoute: SubscribeConfirmedRoute,
+  SubscribeErrorRoute: SubscribeErrorRoute,
+  SubscribePendingRoute: SubscribePendingRoute,
+}
+
+const SubscribeRouteWithChildren = SubscribeRoute._addFileChildren(
+  SubscribeRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  SubscribeRoute: SubscribeRouteWithChildren,
   AuthCallbackRoute: AuthCallbackRoute,
 }
 export const routeTree = rootRouteImport

@@ -35,6 +35,24 @@ export async function api<T = unknown>(
   return parse<T>(res);
 }
 
+/**
+ * Same parse + error contract as `api()` but without the Cognito auth
+ * header or 401 → login redirect. For public endpoints (e.g. the
+ * subscribe form) where no session is involved.
+ */
+export async function publicApi<T = unknown>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const url = `${config.apiBase}${path}`;
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
+  const res = await fetch(url, { ...init, headers });
+  return parse<T>(res);
+}
+
 async function send(url: string, init: RequestInit): Promise<Response> {
   const tokens = getTokens();
   const headers = new Headers(init.headers);

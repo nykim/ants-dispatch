@@ -12,10 +12,11 @@ function RootComponent() {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    // Auth callback and stray logout hits /; both need to pass through to
-    // their own route components before we enforce auth.
+    // Public, unauthenticated routes — let the route component render
+    // without sending the user through the Cognito redirect.
     const isAuthRoute = location.pathname.startsWith('/auth/');
-    if (isAuthRoute) {
+    const isSubscribeRoute = location.pathname.startsWith('/subscribe');
+    if (isAuthRoute || isSubscribeRoute) {
       setChecked(true);
       return;
     }

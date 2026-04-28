@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, publicApi } from './client';
 
 // ── Types (mirror of packages/shared schemas) ───────────────────────────────
 
@@ -391,3 +391,27 @@ export const removeSuppression = (
     { method: 'DELETE' },
   );
 };
+
+// ── Public subscribe (unauthenticated) ─────────────────────────────────────
+
+export interface PublicNewsletterType {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export const listPublicTypes = () =>
+  publicApi<{ items: PublicNewsletterType[] }>('/public/subscribe/types');
+
+export const submitSubscribe = (input: {
+  email: string;
+  name?: string;
+  typeId?: string;
+  /** Honeypot — bots tend to fill every input. Real users never see this. */
+  website?: string;
+  turnstileToken?: string;
+}) =>
+  publicApi<{ ok: true; pending: true }>('/public/subscribe', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
