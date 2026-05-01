@@ -1,5 +1,5 @@
 {
-  "name": "@nda-dispatch/worker-dispatch",
+  "name": "@ants-dispatch/worker-dispatch",
   "version": "0.0.0",
   "private": true,
   "main": "dist/index.js",

@@ -62,7 +62,7 @@ export class ProcessingStack extends Stack {
     ];
 
     this.importsBucket = new Bucket(this, 'ImportsBucket', {
-      bucketName: `nda-dispatch-imports-${config.envName}-${this.account}`,
+      bucketName: `ants-dispatch-imports-${config.envName}-${this.account}`,
       encryption: BucketEncryption.S3_MANAGED,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
@@ -83,13 +83,13 @@ export class ProcessingStack extends Stack {
     });
 
     this.importDlq = new Queue(this, 'ImportDlq', {
-      queueName: `nda-dispatch-${config.envName}-import-dlq`,
+      queueName: `ants-dispatch-${config.envName}-import-dlq`,
       encryption: QueueEncryption.SQS_MANAGED,
       retentionPeriod: Duration.days(14),
     });
 
     this.importQueue = new Queue(this, 'ImportQueue', {
-      queueName: `nda-dispatch-${config.envName}-import`,
+      queueName: `ants-dispatch-${config.envName}-import`,
       encryption: QueueEncryption.SQS_MANAGED,
       visibilityTimeout: Duration.seconds(120),
       retentionPeriod: Duration.days(4),

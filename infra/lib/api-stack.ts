@@ -326,7 +326,7 @@ export class ApiStack extends Stack {
         UNSUB_SECRET: unsubscribeSecret.secretValue.unsafeUnwrap(),
         PUBLIC_BASE_URL: `https://${config.publicHost}`,
         FROM_ADDRESS: `Ants Dispatch <dispatch@${config.sendingDomain}>`,
-        CONFIG_SET_NAME: `nda-dispatch-${config.envName}`,
+        CONFIG_SET_NAME: `ants-dispatch-${config.envName}`,
         TURNSTILE_SECRET: process.env.TURNSTILE_SECRET ?? '',
       },
     });
@@ -338,7 +338,7 @@ export class ApiStack extends Stack {
         actions: ['ses:SendEmail', 'ses:SendRawEmail'],
         resources: [
           `arn:aws:ses:${this.region}:${this.account}:identity/*`,
-          `arn:aws:ses:${this.region}:${this.account}:configuration-set/nda-dispatch-${config.envName}`,
+          `arn:aws:ses:${this.region}:${this.account}:configuration-set/ants-dispatch-${config.envName}`,
         ],
         conditions: {
           StringLike: { 'ses:FromAddress': `*@${config.sendingDomain}` },
@@ -347,7 +347,7 @@ export class ApiStack extends Stack {
     );
 
     this.api = new RestApi(this, 'DispatchApi', {
-      restApiName: `nda-dispatch-api-${config.envName}`,
+      restApiName: `ants-dispatch-api-${config.envName}`,
       deployOptions: {
         stageName: config.envName,
         tracingEnabled: true,
@@ -462,12 +462,12 @@ export class ApiStack extends Stack {
     // public routes, with an extra rate-limit scoped to /public/* since those
     // endpoints are unauthenticated.
     const webAcl = new CfnWebACL(this, 'ApiWebAcl', {
-      name: `nda-dispatch-api-${config.envName}`,
+      name: `ants-dispatch-api-${config.envName}`,
       scope: 'REGIONAL',
       defaultAction: { allow: {} },
       visibilityConfig: {
         cloudWatchMetricsEnabled: true,
-        metricName: `nda-dispatch-api-${config.envName}`,
+        metricName: `ants-dispatch-api-${config.envName}`,
         sampledRequestsEnabled: true,
       },
       rules: [

@@ -100,7 +100,7 @@ async function loadSettings(): Promise<OrgSettings> {
 
 function errorPage(message: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-  <title>View in browser · NDA Dispatch</title>
+  <title>View in browser</title>
   <style>
     body{font-family:'Source Serif 4',Georgia,serif;background:#faf7f1;color:#2a2420;margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
     .card{max-width:520px;width:100%;background:#fff;border:1px solid #e6decf;border-radius:8px;padding:36px 32px}

@@ -39,12 +39,12 @@ export class StorageStack extends Stack {
 
     this.spaBucket = new Bucket(this, 'SpaBucket', {
       ...baseBucketProps,
-      bucketName: `nda-dispatch-spa-${config.envName}-${this.account}`,
+      bucketName: `ants-dispatch-spa-${config.envName}-${this.account}`,
     });
 
     this.archiveBucket = new Bucket(this, 'ArchiveBucket', {
       ...baseBucketProps,
-      bucketName: `nda-dispatch-archive-${config.envName}-${this.account}`,
+      bucketName: `ants-dispatch-archive-${config.envName}-${this.account}`,
       // Allow the SPA to PUT directly to a presigned URL when uploading
       // newsletter assets. GET/HEAD are also allowed so a future "preview
       // before insert" flow can fetch the just-uploaded image without going

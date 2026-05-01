@@ -1,5 +1,5 @@
 {
-  "name": "@nda-dispatch/infra",
+  "name": "@ants-dispatch/infra",
   "version": "0.0.0",
   "private": true,
   "bin": {

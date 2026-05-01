@@ -12,8 +12,8 @@ for arg in "$@"; do
 done
 
 case "$ENV" in
-  dev)  STACK_PREFIX="NdaDispatch-Dev" ;;
-  prod) STACK_PREFIX="NdaDispatch-Prod" ;;
+  dev)  STACK_PREFIX="AntsDispatch-Dev" ;;
+  prod) STACK_PREFIX="AntsDispatch-Prod" ;;
   *)    echo "Unknown env: $ENV (expected dev|prod)" >&2; exit 1 ;;
 esac
 

@@ -59,7 +59,7 @@ export class DeliveryStack extends Stack {
     this.fromAddress = `Ants Dispatch <dispatch@${sendingDomain}>`;
 
     this.configSet = new CfnConfigurationSet(this, 'ConfigSet', {
-      name: `nda-dispatch-${config.envName}`,
+      name: `ants-dispatch-${config.envName}`,
       reputationOptions: { reputationMetricsEnabled: true },
       sendingOptions: { sendingEnabled: true },
     });
@@ -76,7 +76,7 @@ export class DeliveryStack extends Stack {
     this.sesIdentity.addDependency(this.configSet);
 
     this.eventsTopic = new Topic(this, 'SesEventsTopic', {
-      topicName: `nda-dispatch-${config.envName}-ses-events`,
+      topicName: `ants-dispatch-${config.envName}-ses-events`,
       displayName: 'Ants Dispatch — SES events',
     });
 

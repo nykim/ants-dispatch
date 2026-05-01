@@ -9,13 +9,13 @@
  *
  * Usage:
  *   npx tsx scripts/migrate-suppressions.ts \
- *     --table nda-dispatch-dev \
+ *     --table ants-dispatch-dev \
  *     --region us-east-1 \
  *     --dry-run
  *
  *   # then, when happy:
  *   npx tsx scripts/migrate-suppressions.ts \
- *     --table nda-dispatch-dev --region us-east-1
+ *     --table ants-dispatch-dev --region us-east-1
  *
  * What it does for each `SUPP#<email>` partition:
  *   1. Reads every legacy `REASON#<reason>` row.

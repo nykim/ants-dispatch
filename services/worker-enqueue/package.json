@@ -1,5 +1,5 @@
 {
-  "name": "@nda-dispatch/worker-enqueue",
+  "name": "@ants-dispatch/worker-enqueue",
   "version": "0.0.0",
   "private": true,
   "main": "dist/index.js",

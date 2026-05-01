@@ -70,7 +70,7 @@ export class EdgeStack extends Stack {
     });
 
     const securityHeaders = new ResponseHeadersPolicy(this, 'SecurityHeaders', {
-      responseHeadersPolicyName: `nda-dispatch-security-${config.envName}`,
+      responseHeadersPolicyName: `ants-dispatch-security-${config.envName}`,
       securityHeadersBehavior: {
         contentTypeOptions: { override: true },
         frameOptions: { frameOption: HeadersFrameOption.DENY, override: true },
@@ -113,7 +113,7 @@ export class EdgeStack extends Stack {
     // CloudFront-Function viewer-request rewrite, so the fallback is unneeded.
 
     this.distribution = new Distribution(this, 'Cdn', {
-      comment: `nda-dispatch edge (${config.envName})`,
+      comment: `ants-dispatch edge (${config.envName})`,
       priceClass: PriceClass.PRICE_CLASS_100,
       httpVersion: HttpVersion.HTTP2_AND_3,
       minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021,

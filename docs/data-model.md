@@ -1,6 +1,6 @@
 # DynamoDB single-table layout
 
-Table: `nda-dispatch-<env>` — PAY_PER_REQUEST, PITR on, stream `NEW_AND_OLD_IMAGES`, `ttl` attribute.
+Table: `ants-dispatch-<env>` — PAY_PER_REQUEST, PITR on, stream `NEW_AND_OLD_IMAGES`, `ttl` attribute.
 GSI1: `GSI1PK` / `GSI1SK`, projection ALL.
 
 ## Item shapes

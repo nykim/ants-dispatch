@@ -25,7 +25,7 @@ export class AuthStack extends Stack {
     const { config } = props;
 
     this.userPool = new UserPool(this, 'AdminPool', {
-      userPoolName: `nda-dispatch-admins-${config.envName}`,
+      userPoolName: `ants-dispatch-admins-${config.envName}`,
       selfSignUpEnabled: false,
       signInAliases: { email: true },
       standardAttributes: {
@@ -72,7 +72,7 @@ export class AuthStack extends Stack {
 
     this.userPoolDomain = this.userPool.addDomain('HostedUi', {
       cognitoDomain: {
-        domainPrefix: `nda-dispatch-${config.envName}-${this.account.slice(-4)}`,
+        domainPrefix: `ants-dispatch-${config.envName}-${this.account.slice(-4)}`,
       },
     });
 

@@ -14,7 +14,7 @@ import { EdgeStack } from '../lib/edge-stack';
 const app = new App();
 const config = resolveConfig(app);
 const env = { account: config.account, region: config.region };
-const prefix = `NdaDispatch-${config.envName === 'prod' ? 'Prod' : 'Dev'}`;
+const prefix = `AntsDispatch-${config.envName === 'prod' ? 'Prod' : 'Dev'}`;
 
 const auth = new AuthStack(app, `${prefix}-Auth`, { env, config });
 const storage = new StorageStack(app, `${prefix}-Storage`, { env, config });
@@ -62,5 +62,5 @@ new EdgeStack(app, `${prefix}-Edge`, {
   api: api.api,
 });
 
-Tags.of(app).add('project', 'nda-dispatch');
+Tags.of(app).add('project', 'ants-dispatch');
 Tags.of(app).add('env', config.envName);

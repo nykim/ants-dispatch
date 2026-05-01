@@ -304,7 +304,7 @@ publish it at your DNS provider:
 
 ```bash
 CERT=$(aws cloudformation describe-stack-resources \
-  --stack-name NdaDispatch-Dev-Edge --region us-east-1 \
+  --stack-name AntsDispatch-Dev-Edge --region us-east-1 \
   --query "StackResources[?LogicalResourceId=='CertE7D9FC49'].PhysicalResourceId" \
   --output text)
 aws acm describe-certificate --certificate-arn "$CERT" --region us-east-1 \
@@ -319,7 +319,7 @@ minutes once the cert validates.
 After Edge finishes (~5–10 min), grab the distribution domain:
 
 ```bash
-aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Edge --region us-east-1 \
+aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Edge --region us-east-1 \
   --query 'Stacks[0].Outputs[?OutputKey==`DistributionDomain`].OutputValue' --output text
 ```
 
@@ -345,7 +345,7 @@ can only send to verified test recipients).
 ### 7. Create the first admin user
 
 ```bash
-POOL=$(aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Auth \
+POOL=$(aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Auth \
   --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
 
 aws cognito-idp admin-create-user \
@@ -385,7 +385,7 @@ cd web
 cp .env.example .env.production
 
 # Fill in from CloudFormation outputs:
-aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Auth --region us-east-1 \
+aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Auth --region us-east-1 \
   --query 'Stacks[0].Outputs' --output table
 ```
 
@@ -442,7 +442,7 @@ cd web && ./deploy.sh dev
 
 The env flag drives five things:
 
-1. **Stack name prefix.** `NdaDispatch-Dev-*` vs `NdaDispatch-Prod-*` — each
+1. **Stack name prefix.** `AntsDispatch-Dev-*` vs `AntsDispatch-Prod-*` — each
    env has its own CloudFormation stacks, S3 SPA bucket, CloudFront
    distribution, DynamoDB table, and Lambdas. They share nothing.
 2. **Domain context.** `infra/lib/config.ts` reads `domain.dev` vs
@@ -474,7 +474,7 @@ The prefix is configurable; "Dispatch" is fixed.
 
 ```bash
 # web/.env.production
-VITE_APP_BRAND=NDA           # → "NDA Dispatch", collapsed mark "N•"
+VITE_APP_BRAND=Acme          # → "Acme Dispatch", collapsed mark "A•"
 ```
 
 Defaults to `Ants` if unset. Rebuild + redeploy the SPA to apply.

@@ -36,7 +36,7 @@ export class DataStack extends Stack {
     const removalPolicy = config.removalOnDestroy ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN;
 
     this.table = new Table(this, 'DispatchTable', {
-      tableName: `nda-dispatch-${config.envName}`,
+      tableName: `ants-dispatch-${config.envName}`,
       partitionKey: { name: 'PK', type: AttributeType.STRING },
       sortKey: { name: 'SK', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
@@ -62,7 +62,7 @@ export class DataStack extends Stack {
     });
 
     this.unsubscribeSecret = new Secret(this, 'UnsubscribeSecret', {
-      secretName: `nda-dispatch-${config.envName}-unsubscribe-secret`,
+      secretName: `ants-dispatch-${config.envName}-unsubscribe-secret`,
       generateSecretString: {
         excludePunctuation: true,
       },
@@ -70,13 +70,13 @@ export class DataStack extends Stack {
     this.unsubscribeSecret.applyRemovalPolicy(removalPolicy);
 
     this.sendDlq = new Queue(this, 'sendDlq', {
-      queueName: `nda-dispatch-${config.envName}-send-dlq`,
+      queueName: `ants-dispatch-${config.envName}-send-dlq`,
       encryption: QueueEncryption.SQS_MANAGED,
       retentionPeriod: Duration.days(14),
     });
 
     this.sendQueue = new Queue(this, 'SendQueue', {
-      queueName: `nda-dispatch-${config.envName}-send`,
+      queueName: `ants-dispatch-${config.envName}-send`,
       encryption: QueueEncryption.SQS_MANAGED,
       visibilityTimeout: Duration.seconds(60),
       retentionPeriod: Duration.days(4),
@@ -90,12 +90,12 @@ export class DataStack extends Stack {
     // Lambda timeout (15 min) so a long-running campaign isn't redelivered
     // mid-flight.
     this.enqueueDlq = new Queue(this, 'EnqueueDlq', {
-      queueName: `nda-dispatch-${config.envName}-enqueue-dlq`,
+      queueName: `ants-dispatch-${config.envName}-enqueue-dlq`,
       encryption: QueueEncryption.SQS_MANAGED,
       retentionPeriod: Duration.days(14),
     });
     this.enqueueQueue = new Queue(this, 'EnqueueQueue', {
-      queueName: `nda-dispatch-${config.envName}-enqueue`,
+      queueName: `ants-dispatch-${config.envName}-enqueue`,
       encryption: QueueEncryption.SQS_MANAGED,
       visibilityTimeout: Duration.minutes(15),
       retentionPeriod: Duration.days(4),

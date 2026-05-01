@@ -7,14 +7,14 @@ configurable via `-c region=…`.
 
 | Stack | Purpose |
 |---|---|
-| `NdaDispatch-<env>-Auth` | Cognito User Pool + Hosted UI domain + SPA app client (auth code flow + PKCE, 12-char password policy, required TOTP MFA in prod (off in dev), SMS disabled). |
-| `NdaDispatch-<env>-Storage` | S3 buckets: `spa` (static SPA bundle), `archive` (rendered HTML + uploaded asset images). |
-| `NdaDispatch-<env>-Data` | DynamoDB single table (`nda-dispatch-<env>`) with GSI1 + GSI2, streams, PITR, TTL. SQS `send` queue (per-recipient SES jobs) + DLQ. SQS `enqueue` queue (one-message-per-campaign fan-out trigger) + DLQ. `unsubscribeSecret` in Secrets Manager (HMAC key for unsubscribe + view-in-browser tokens). |
-| `NdaDispatch-<env>-Processing` | S3 `imports/*.csv` PUT → SQS `import` → `worker-import` Lambda. Parses CSV (quote-aware), checks suppressions, upserts contacts + tag index items, updates the `IMPORT#<id>` record with counts and status. |
-| `NdaDispatch-<env>-Delivery` | SES domain identity (DKIM on, custom MAIL-FROM `mail.<domain>`), configuration set with reputation metrics + event destination → SNS `ses-events`. **`worker-send`** consumes the `send` SQS queue and calls `SESv2:SendEmail` with `List-Unsubscribe` headers + per-recipient HMAC tokens, prepends a "View in browser" bar, and re-uses module-cached campaign META + org settings. **`worker-enqueue`** (15-min timeout, batchSize 1) consumes the `enqueue` queue: materializes the audience, writes RCPT rows in 25-row DDB batches, and pushes per-recipient `{campaignId, email}` messages into the `send` queue. Domain identity stays "pending verification" until DNS is wired (DKIM CNAMEs + `_amazonses` TXT). |
-| `NdaDispatch-<env>-Events` | SNS `ses-events` → `worker-events` Lambda → DDB. Dispatches Send / Delivery / Bounce / Complaint / Open / Click / Reject / DeliveryDelay / RenderingFailure / Subscription into the `STATS` row (`ADD` counters), the `RCPT#<email>` row (timestamps + state + `clickedLinks` String Set), and per-link `LINK#<hash>` rows (`clicks` and `uniqueClicks` per URL). Permanent bounces and complaints write a `SUPP#<email>` suppression. Failures land in `events-dlq`. |
-| `NdaDispatch-<env>-Api` | Regional API Gateway REST API + AWS WAF v2 (Common + KnownBadInputs managed rules, IP rate-limit scoped to `/public/*`). Authentication via Cognito JWT authorizer for everything under `/admin/*`. |
-| `NdaDispatch-<env>-Edge` | CloudFront distribution + ACM cert (DNS-validated) for the configured `domain`. Single origin fronting `/` → SPA bucket, `/archive/*` + `/renders/*` → archive bucket, `/admin/*` + `/public/*` → API Gateway. |
+| `AntsDispatch-<env>-Auth` | Cognito User Pool + Hosted UI domain + SPA app client (auth code flow + PKCE, 12-char password policy, required TOTP MFA in prod (off in dev), SMS disabled). |
+| `AntsDispatch-<env>-Storage` | S3 buckets: `spa` (static SPA bundle), `archive` (rendered HTML + uploaded asset images). |
+| `AntsDispatch-<env>-Data` | DynamoDB single table (`ants-dispatch-<env>`) with GSI1 + GSI2, streams, PITR, TTL. SQS `send` queue (per-recipient SES jobs) + DLQ. SQS `enqueue` queue (one-message-per-campaign fan-out trigger) + DLQ. `unsubscribeSecret` in Secrets Manager (HMAC key for unsubscribe + view-in-browser tokens). |
+| `AntsDispatch-<env>-Processing` | S3 `imports/*.csv` PUT → SQS `import` → `worker-import` Lambda. Parses CSV (quote-aware), checks suppressions, upserts contacts + tag index items, updates the `IMPORT#<id>` record with counts and status. |
+| `AntsDispatch-<env>-Delivery` | SES domain identity (DKIM on, custom MAIL-FROM `mail.<domain>`), configuration set with reputation metrics + event destination → SNS `ses-events`. **`worker-send`** consumes the `send` SQS queue and calls `SESv2:SendEmail` with `List-Unsubscribe` headers + per-recipient HMAC tokens, prepends a "View in browser" bar, and re-uses module-cached campaign META + org settings. **`worker-enqueue`** (15-min timeout, batchSize 1) consumes the `enqueue` queue: materializes the audience, writes RCPT rows in 25-row DDB batches, and pushes per-recipient `{campaignId, email}` messages into the `send` queue. Domain identity stays "pending verification" until DNS is wired (DKIM CNAMEs + `_amazonses` TXT). |
+| `AntsDispatch-<env>-Events` | SNS `ses-events` → `worker-events` Lambda → DDB. Dispatches Send / Delivery / Bounce / Complaint / Open / Click / Reject / DeliveryDelay / RenderingFailure / Subscription into the `STATS` row (`ADD` counters), the `RCPT#<email>` row (timestamps + state + `clickedLinks` String Set), and per-link `LINK#<hash>` rows (`clicks` and `uniqueClicks` per URL). Permanent bounces and complaints write a `SUPP#<email>` suppression. Failures land in `events-dlq`. |
+| `AntsDispatch-<env>-Api` | Regional API Gateway REST API + AWS WAF v2 (Common + KnownBadInputs managed rules, IP rate-limit scoped to `/public/*`). Authentication via Cognito JWT authorizer for everything under `/admin/*`. |
+| `AntsDispatch-<env>-Edge` | CloudFront distribution + ACM cert (DNS-validated) for the configured `domain`. Single origin fronting `/` → SPA bucket, `/archive/*` + `/renders/*` → archive bucket, `/admin/*` + `/public/*` → API Gateway. |
 
 ### API routes (defined in `lib/api-stack.ts`)
 
@@ -76,7 +76,7 @@ npm run deploy:dev   # uses context domain.dev, --require-approval never
 npm run deploy:prod  # uses context domain.prod, --require-approval broadening
 
 # Single stack:
-npx cdk deploy NdaDispatch-Dev-Delivery -c env=dev
+npx cdk deploy AntsDispatch-Dev-Delivery -c env=dev
 
 # Ad-hoc override without touching cdk.json:
 npx cdk deploy --all -c env=dev -c domain=staging.example.com
@@ -99,7 +99,7 @@ TOKEN=$(aws cognito-idp admin-initiate-auth --user-pool-id <id> \
   --auth-parameters USERNAME=you@example.com,PASSWORD='…' \
   --query 'AuthenticationResult.IdToken' --output text)
 
-API=$(aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Api \
+API=$(aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Api \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
 
 curl -H "Authorization: $TOKEN" "$API/admin/ping"
@@ -111,9 +111,9 @@ curl -H "Authorization: $TOKEN" "$API/admin/ping"
 The repo-root `./deploy.sh` covers this; for the manual flow:
 
 ```bash
-SPA=$(aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Storage --region us-east-1 \
+SPA=$(aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Storage --region us-east-1 \
   --query 'Stacks[0].Outputs[?OutputKey==`SpaBucketName`].OutputValue' --output text)
-DIST=$(aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Edge --region us-east-1 \
+DIST=$(aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Edge --region us-east-1 \
   --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text)
 
 cd web && npm run build
@@ -176,7 +176,7 @@ In a second terminal while the deploy is paused:
 
 ```bash
 CERT_ARN=$(aws cloudformation describe-stack-resources \
-  --stack-name NdaDispatch-Dev-Edge --region us-east-1 \
+  --stack-name AntsDispatch-Dev-Edge --region us-east-1 \
   --query "StackResources[?LogicalResourceId=='CertE7D9FC49'].PhysicalResourceId" \
   --output text)
 
@@ -190,7 +190,7 @@ resumes within ~2 minutes once the cert validates.
 ### 3. Wait for CloudFront (~5–10 min) then publish the alias CNAME
 
 ```bash
-aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Edge --region us-east-1 \
+aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Edge --region us-east-1 \
   --query 'Stacks[0].Outputs[?OutputKey==`DistributionDomain`].OutputValue' --output text
 # e.g. d1a2b3c4xxxxxx.cloudfront.net
 ```

@@ -7,8 +7,8 @@
  */
 import { config } from '../config';
 
-const STORAGE_KEY = 'nda-dispatch-auth';
-const PKCE_KEY = 'nda-dispatch-pkce';
+const STORAGE_KEY = 'ants-dispatch-auth';
+const PKCE_KEY = 'ants-dispatch-pkce';
 
 export interface Tokens {
   idToken: string;

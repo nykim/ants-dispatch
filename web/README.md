@@ -1,4 +1,4 @@
-# @nda-dispatch/web — admin SPA
+# @ants-dispatch/web — admin SPA
 
 Vite + React 18 + TypeScript + TanStack Router/Query + TipTap WYSIWYG, with
 hand-rolled Cognito Hosted UI PKCE auth. Served from the S3 `spa` bucket via
@@ -9,9 +9,9 @@ CloudFront in prod; `npm run dev` for local development.
 1. **Copy `.env.example` → `.env.local`** and fill with values from the
    deployed stack outputs:
    ```bash
-   aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Auth --region us-east-1 \
+   aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Auth --region us-east-1 \
      --query 'Stacks[0].Outputs' --output table
-   aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Api  --region us-east-1 \
+   aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Api  --region us-east-1 \
      --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text
    ```
    Map the outputs:
@@ -57,9 +57,9 @@ EOF
 npm run build
 
 # Publish to the SPA bucket + invalidate CloudFront:
-SPA=$(aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Storage --region us-east-1 \
+SPA=$(aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Storage --region us-east-1 \
   --query 'Stacks[0].Outputs[?OutputKey==`SpaBucketName`].OutputValue' --output text)
-DIST=$(aws cloudformation describe-stacks --stack-name NdaDispatch-Dev-Edge --region us-east-1 \
+DIST=$(aws cloudformation describe-stacks --stack-name AntsDispatch-Dev-Edge --region us-east-1 \
   --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text)
 aws s3 sync dist/ "s3://$SPA/" --delete \
   --cache-control 'public, max-age=31536000, immutable' --exclude index.html

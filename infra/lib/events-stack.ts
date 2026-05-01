@@ -31,7 +31,7 @@ export class EventsStack extends Stack {
     const repoRoot = path.resolve(__dirname, '../..');
 
     this.ingestDlq = new Queue(this, 'IngestDlq', {
-      queueName: `nda-dispatch-${config.envName}-events-dlq`,
+      queueName: `ants-dispatch-${config.envName}-events-dlq`,
       encryption: QueueEncryption.SQS_MANAGED,
       retentionPeriod: Duration.days(14),
     });
