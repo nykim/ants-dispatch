@@ -49,6 +49,14 @@ export class EdgeStack extends Stack {
     super(scope, id, props);
     const { config, spaBucket, archiveBucket, api } = props;
     const host = config.adminHost;
+    // Escape hatch: when CloudFront's alias-validation refuses the new
+    // distribution because DNS still resolves the host to a previous
+    // distribution (`-c skipDomainAlias=true`), deploy without the alias
+    // and certificate. Use `aws cloudfront associate-alias` afterward to
+    // forcibly transfer the alias, then remove the flag and redeploy so
+    // CDK fully tracks both the alias and the cert.
+    const skipDomainAlias = this.node.tryGetContext('skipDomainAlias') === 'true'
+      || this.node.tryGetContext('skipDomainAlias') === true;
 
     this.certificate = new Certificate(this, 'Cert', {
       domainName: host,
@@ -118,8 +126,9 @@ export class EdgeStack extends Stack {
       httpVersion: HttpVersion.HTTP2_AND_3,
       minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021,
       defaultRootObject: 'index.html',
-      domainNames: [host],
-      certificate: this.certificate,
+      ...(skipDomainAlias
+        ? {}
+        : { domainNames: [host], certificate: this.certificate }),
       defaultBehavior: {
         origin: spaOrigin,
         viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
