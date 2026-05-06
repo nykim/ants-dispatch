@@ -1,11 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useEditor, EditorContent, type Editor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
-import Image from '@tiptap/extension-image';
-import TextAlign from '@tiptap/extension-text-align';
 import {
   createTemplate,
   deleteTemplate,
@@ -19,7 +14,7 @@ import {
   type OrgSettings,
   type Template,
 } from '../api/endpoints';
-import { AssetPickerModal } from '../components/AssetPickerModal';
+import { RichTextEditor, type RichTextEditorHandle } from '../components/RichTextEditor';
 import { TypePill } from '../components/types/TypePill';
 import { renderFooterPreviewHtml } from '../lib/footerPreview';
 import { buildPreviewSrcDoc } from '../lib/previewFrame';
@@ -131,9 +126,9 @@ function ComposePage() {
 
   // Snapshot of the original (pre-WYSIWYG) HTML, captured the first time the
   // user enters Visual mode for a given template. Lets us offer a "Restore
-  // HTML" button if TipTap's HTML normalization has lost meaningful detail.
-  // Reset whenever the active template changes (handled in the localHtml reset
-  // effect below).
+  // HTML" button if the WYSIWYG editor's HTML normalization loses meaningful
+  // detail. Reset whenever the active template changes (handled in the
+  // localHtml reset effect below).
   const originalHtmlRef = useRef<string | null>(null);
   // Whether we've already shown the fidelity-loss confirm for this template,
   // so the user only has to acknowledge it once per template per session.
@@ -258,75 +253,31 @@ function ComposePage() {
   });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [imagePickerOpen, setImagePickerOpen] = useState(false);
+  const richTextRef = useRef<RichTextEditorHandle>(null);
 
   const [localHtml, setLocalHtml] = useState(current?.html ?? '');
   const [localSubject, setLocalSubject] = useState(current?.subject ?? '');
   const [localTitle, setLocalTitle] = useState(current?.title ?? '');
 
-  // TipTap editor — single instance reused across mode switches. `onUpdate`
-  // pumps the editor's current HTML into `localHtml`, which the existing
-  // 750ms autosave effect already watches.
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Link.configure({ openOnClick: false, autolink: true }),
-      Image,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ],
-    content: localHtml,
-    onUpdate: ({ editor }) => {
-      const html = editor.getHTML();
-      setLocalHtml(html);
-    },
-  });
-
-  // Reset on template switch: pull fresh content into local state AND reseed
-  // the WYSIWYG editor in the SAME effect. Doing the editor reseed here
-  // (rather than in a separate effect keyed on current?.id) avoids a closure
-  // trap: a separate effect would see the stale `localHtml` from this
-  // render's closure (still equal to editor.getHTML() since neither has been
-  // updated yet for the new template), bail out of the equality check, and
-  // leave the editor showing the *previous* template's content. The next
-  // keystroke would then push the previous template's HTML into `localHtml`
-  // and the iframe preview would render the wrong newsletter.
+  // Reset on template switch: pull fresh content into local state. The
+  // visual editor is controlled via the `value` prop on <RichTextEditor>,
+  // so updating localHtml is enough — the wrapper diffs against the editor's
+  // current content and reseeds when they differ. Snapshot the pre-edit HTML
+  // for "Restore HTML" before any normalization can happen.
   useEffect(() => {
     console.log('[reset-local]', { id: current?.id, htmlLen: current?.html?.length });
     const newHtml = current?.html ?? '';
     setLocalHtml(newHtml);
     setLocalSubject(current?.subject ?? '');
     setLocalTitle(current?.title ?? '');
-    originalHtmlRef.current = null;
-    if (editor && editorMode === 'visual') {
-      // Snapshot the new template's original HTML before TipTap normalizes
-      // it, so the user can still hit "Restore HTML" later.
-      originalHtmlRef.current = newHtml;
-      editor.commands.setContent(newHtml || '<p></p>', { emitUpdate: false });
-    }
-    // Intentionally NOT depending on editorMode — switching modes is handled
-    // by the next effect. Depending on `editor` so the initial seed runs
-    // once the editor instance becomes available after first render.
+    originalHtmlRef.current = editorMode === 'visual' ? newHtml : null;
+    // editorMode intentionally omitted — mode switches don't change templates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id, editor]);
+  }, [current?.id]);
 
-  // Reseed when entering visual mode (preserves uncommitted code-mode edits
-  // that haven't yet flushed through the 750ms autosave debounce). This is
-  // the ONLY effect that handles mode switches; template switches are
-  // handled atomically by the reset effect above.
-  useEffect(() => {
-    if (!editor) return;
-    if (editorMode !== 'visual') return;
-    if (editor.getHTML() === localHtml) return;
-    editor.commands.setContent(localHtml || '<p></p>', { emitUpdate: false });
-    // Only re-run when the mode itself changes. Depending on `localHtml`
-    // would clobber the cursor on every keystroke; depending on `current?.id`
-    // would race with the reset effect above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editorMode]);
-
-  // Switch into visual mode. If the user has hand-coded HTML that TipTap may
-  // simplify (tables, <style>, lots of inline styles), warn them once per
-  // template and snapshot the original so they can restore later.
+  // Switch into visual mode. If the user has hand-coded HTML the visual
+  // editor may simplify (tables, <style>, lots of inline styles), warn them
+  // once per template and snapshot the original so they can restore later.
   function requestVisualMode() {
     const id = current?.id;
     if (!id) {
@@ -353,24 +304,21 @@ function ComposePage() {
     const original = originalHtmlRef.current;
     if (original === null) return;
     setLocalHtml(original);
-    if (editor) {
-      editor.commands.setContent(original || '<p></p>', { emitUpdate: false });
-    }
     originalHtmlRef.current = null;
   }
 
   const canRestore = editorMode === 'code' && originalHtmlRef.current !== null && originalHtmlRef.current !== localHtml;
 
   // Insert a chosen asset into whichever editor is active. In Visual mode we
-  // hand off to TipTap's setImage command so the node sits inside the
-  // ProseMirror doc (autosave then picks it up via onUpdate). In Code mode
-  // we splice raw <img> markup at the textarea's caret — preserves the
-  // surrounding HTML structure the user is hand-editing.
+  // hand off to TinyMCE via the wrapper's imperative `insertImage` so the
+  // node sits at the caret and the editor's change event fires (autosave
+  // picks it up via onChange). In Code mode we splice raw <img> markup at
+  // the textarea's caret — preserves the surrounding HTML structure the
+  // user is hand-editing.
   function handleAssetSelect(asset: Asset) {
-    setImagePickerOpen(false);
     const alt = asset.filename.replace(/\.[a-z0-9]+$/i, '').replace(/-/g, ' ');
     if (editorMode === 'visual') {
-      editor?.chain().focus().setImage({ src: asset.url, alt }).run();
+      richTextRef.current?.insertImage(asset.url, alt);
       return;
     }
     const tag = `<img src="${asset.url}" alt="${escapeAttr(alt)}" style="max-width:100%;height:auto" />`;
@@ -646,7 +594,7 @@ function ComposePage() {
                   type="button"
                   className="btn btn-sm"
                   style={{ fontSize: 11, padding: '3px 8px' }}
-                  onClick={() => setImagePickerOpen(true)}
+                  onClick={() => richTextRef.current?.openAssetPicker()}
                   title="Upload or pick a previously-uploaded image"
                 >
                   + Image
@@ -655,11 +603,21 @@ function ComposePage() {
                   {(current.id ?? '').slice(0, 8)} · v{current.version} · {localHtml.length.toLocaleString()} chars
                 </span>
               </div>
-              {editorMode === 'visual' && editor && (
-                <WysiwygToolbar editor={editor} onPickImage={() => setImagePickerOpen(true)} />
-              )}
               <div className="split-pane-body">
-                {editorMode === 'code' ? (
+                {/* Both panes stay mounted; only display flips. Keeping the
+                    editor mounted preserves the ref so the "+ Image" button
+                    in this header (and the textarea-mode asset picker) can
+                    still call into it via richTextRef.current. */}
+                <div style={{ display: editorMode === 'code' ? 'none' : 'block', height: '100%' }}>
+                  <RichTextEditor
+                    ref={richTextRef}
+                    value={localHtml}
+                    onChange={setLocalHtml}
+                    toolbar="full"
+                    onAssetSelect={handleAssetSelect}
+                  />
+                </div>
+                {editorMode === 'code' && (
                   <div style={{ position: 'relative', height: '100%' }}>
                     <textarea
                       ref={textareaRef}
@@ -684,8 +642,6 @@ function ComposePage() {
                       </button>
                     )}
                   </div>
-                ) : (
-                  <EditorContent editor={editor} className="wysiwyg-editor" />
                 )}
               </div>
             </div>
@@ -818,12 +774,6 @@ function ComposePage() {
         </div>
       )}
     </div>
-    {imagePickerOpen && (
-      <AssetPickerModal
-        onClose={() => setImagePickerOpen(false)}
-        onSelect={handleAssetSelect}
-      />
-    )}
     {previewOpen && (
       <RenderedPreviewModal
         html={localHtml}
@@ -980,75 +930,3 @@ function RenderedPreviewModal({
   );
 }
 
-function WysiwygToolbar({ editor, onPickImage }: { editor: Editor; onPickImage: () => void }) {
-  // Force re-render when the editor's selection or active marks change so the
-  // active state on toolbar buttons stays in sync.
-  const [, force] = useState(0);
-  useEffect(() => {
-    const update = () => force((n) => n + 1);
-    editor.on('selectionUpdate', update);
-    editor.on('transaction', update);
-    return () => {
-      editor.off('selectionUpdate', update);
-      editor.off('transaction', update);
-    };
-  }, [editor]);
-
-  const btn = (
-    label: string,
-    isActive: boolean,
-    onClick: () => void,
-    title: string,
-  ) => (
-    <button
-      type="button"
-      className={`tb-btn ${isActive ? 'active' : ''}`}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      title={title}
-    >
-      {label}
-    </button>
-  );
-
-  const promptLink = () => {
-    const prev = editor.getAttributes('link').href as string | undefined;
-    const url = window.prompt('Link URL (leave blank to remove)', prev ?? 'https://');
-    if (url === null) return;
-    if (url === '') {
-      editor.chain().focus().extendMarkRange('link').unsetLink().run();
-      return;
-    }
-    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-  };
-
-
-  return (
-    <div className="wysiwyg-toolbar">
-      {btn('B', editor.isActive('bold'), () => editor.chain().focus().toggleBold().run(), 'Bold (⌘B)')}
-      {btn('I', editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run(), 'Italic (⌘I)')}
-      {btn('S', editor.isActive('strike'), () => editor.chain().focus().toggleStrike().run(), 'Strikethrough')}
-      <span className="tb-divider" />
-      {btn('H1', editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run(), 'Heading 1')}
-      {btn('H2', editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run(), 'Heading 2')}
-      {btn('H3', editor.isActive('heading', { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run(), 'Heading 3')}
-      {btn('¶', editor.isActive('paragraph'), () => editor.chain().focus().setParagraph().run(), 'Paragraph')}
-      <span className="tb-divider" />
-      {btn('•', editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run(), 'Bullet list')}
-      {btn('1.', editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), 'Numbered list')}
-      {btn('“”', editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), 'Blockquote')}
-      {btn('</>', editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run(), 'Code block')}
-      <span className="tb-divider" />
-      {btn('⇤', editor.isActive({ textAlign: 'left' }), () => editor.chain().focus().setTextAlign('left').run(), 'Align left')}
-      {btn('⇔', editor.isActive({ textAlign: 'center' }), () => editor.chain().focus().setTextAlign('center').run(), 'Align center')}
-      {btn('⇥', editor.isActive({ textAlign: 'right' }), () => editor.chain().focus().setTextAlign('right').run(), 'Align right')}
-      <span className="tb-divider" />
-      {btn('🔗', editor.isActive('link'), promptLink, 'Add or edit link')}
-      {btn('🖼', false, onPickImage, 'Insert image from library')}
-      {btn('—', false, () => editor.chain().focus().setHorizontalRule().run(), 'Horizontal rule')}
-      <span className="tb-divider" />
-      {btn('↶', false, () => editor.chain().focus().undo().run(), 'Undo (⌘Z)')}
-      {btn('↷', false, () => editor.chain().focus().redo().run(), 'Redo (⇧⌘Z)')}
-    </div>
-  );
-}

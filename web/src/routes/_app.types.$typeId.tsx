@@ -1,17 +1,15 @@
 import { createFileRoute, useNavigate, useParams, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
-import { useEditor, EditorContent, type Editor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import LinkExt from '@tiptap/extension-link';
-import Image from '@tiptap/extension-image';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createType,
   getType,
   updateType,
   type NewsletterType,
 } from '../api/endpoints';
+import { RichTextEditor } from '../components/RichTextEditor';
 import { TypePill } from '../components/types/TypePill';
+import { buildPreviewSrcDoc } from '../lib/previewFrame';
 
 export const Route = createFileRoute('/_app/types/$typeId')({
   component: TypeEditPage,
@@ -40,21 +38,14 @@ function TypeEditPage() {
   const [publicSubscribable, setPublicSubscribable] = useState(false);
   const [tagWarning, setTagWarning] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<'visual' | 'code'>('visual');
+  const [showPreview, setShowPreview] = useState(false);
   const seededRef = useRef(false);
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      LinkExt.configure({ openOnClick: false, autolink: true }),
-      Image,
-    ],
-    content: '',
-    onUpdate: ({ editor }) => setDefaultBodyHtml(editor.getHTML()),
-  });
+  const previewDoc = useMemo(() => buildPreviewSrcDoc(defaultBodyHtml), [defaultBodyHtml]);
 
   // Seed once when data arrives (or immediately if creating).
   useEffect(() => {
-    if (seededRef.current || !editor) return;
+    if (seededRef.current) return;
     if (!isNew && !existing) return;
     seededRef.current = true;
     if (existing) {
@@ -65,17 +56,8 @@ function TypeEditPage() {
       setDefaultSubjectPrefix(existing.defaultSubjectPrefix ?? '');
       setDefaultBodyHtml(existing.defaultBodyHtml ?? '');
       setPublicSubscribable(existing.publicSubscribable === true);
-      editor.commands.setContent(existing.defaultBodyHtml || '<p></p>', { emitUpdate: false });
     }
-  }, [editor, existing, isNew]);
-
-  // Reseed when switching back into visual mode.
-  useEffect(() => {
-    if (!editor || editorMode !== 'visual') return;
-    if (editor.getHTML() === defaultBodyHtml) return;
-    editor.commands.setContent(defaultBodyHtml || '<p></p>', { emitUpdate: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editorMode]);
+  }, [existing, isNew]);
 
   const saveMut = useMutation({
     mutationFn: (input: Partial<NewsletterType>) =>
@@ -250,7 +232,7 @@ function TypeEditPage() {
 
       <div className="card">
         <div className="card-header">
-          <div>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div className="eyebrow">Default body</div>
             <h3 className="serif mt-sm">Newsletter template</h3>
             <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
@@ -258,43 +240,47 @@ function TypeEditPage() {
               starting body. Leave blank to fall back to the system default.
             </p>
           </div>
-          <div className="editor-mode-toggle" role="tablist" aria-label="Editor mode">
+          <div className="row items-center gap-sm" style={{ flexShrink: 0 }}>
             <button
+              className="btn btn-ghost btn-sm"
               type="button"
-              role="tab"
-              aria-selected={editorMode === 'visual'}
-              className={`editor-mode-btn ${editorMode === 'visual' ? 'active' : ''}`}
-              onClick={() => setEditorMode('visual')}
+              onClick={() => setShowPreview((v) => !v)}
+              disabled={!defaultBodyHtml.trim()}
+              title={defaultBodyHtml.trim() ? 'Preview the rendered HTML' : 'Add some content to preview'}
             >
-              Visual
+              {showPreview ? 'Hide preview' : 'Preview'}
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={editorMode === 'code'}
-              className={`editor-mode-btn ${editorMode === 'code' ? 'active' : ''}`}
-              onClick={() => setEditorMode('code')}
-            >
-              HTML
-            </button>
+            <div className="editor-mode-toggle" role="tablist" aria-label="Editor mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={editorMode === 'visual'}
+                className={`editor-mode-btn ${editorMode === 'visual' ? 'active' : ''}`}
+                onClick={() => setEditorMode('visual')}
+              >
+                Visual
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={editorMode === 'code'}
+                className={`editor-mode-btn ${editorMode === 'code' ? 'active' : ''}`}
+                onClick={() => setEditorMode('code')}
+              >
+                HTML
+              </button>
+            </div>
           </div>
         </div>
         <div className="card-body stack" style={{ gap: 8 }}>
           {editorMode === 'visual' ? (
-            <>
-              <Toolbar editor={editor} />
-              <div
-                className="wysiwyg-editor"
-                style={{
-                  minHeight: 320,
-                  height: 'auto',
-                  border: '1px solid var(--rule, #e5e7eb)',
-                  borderRadius: 6,
-                }}
-              >
-                <EditorContent editor={editor} />
-              </div>
-            </>
+            <RichTextEditor
+              value={defaultBodyHtml}
+              onChange={setDefaultBodyHtml}
+              toolbar="full"
+              minHeight={320}
+              height={420}
+            />
           ) : (
             <textarea
               className="code-editor"
@@ -303,6 +289,26 @@ function TypeEditPage() {
               spellCheck={false}
               style={{ minHeight: 320 }}
             />
+          )}
+          {showPreview && (
+            <div className="stack" style={{ gap: 6, marginTop: 4 }}>
+              <label className="eyebrow">Preview</label>
+              <iframe
+                title="Template preview"
+                srcDoc={previewDoc}
+                sandbox=""
+                style={{
+                  width: '100%',
+                  height: 420,
+                  border: '1px solid var(--rule, #e5e7eb)',
+                  borderRadius: 6,
+                  background: '#fff',
+                }}
+              />
+              <p className="muted" style={{ fontSize: 11 }}>
+                Body only — the org footer and unsubscribe link are appended automatically at send time.
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -315,50 +321,6 @@ function TypeEditPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function Toolbar({ editor }: { editor: Editor | null }) {
-  if (!editor) return null;
-  return (
-    <div className="row items-center gap-sm" style={{ flexWrap: 'wrap' }}>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')}>B</ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')}><i>I</i></ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })}>H2</ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })}>H3</ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')}>• List</ToolbarButton>
-      <ToolbarButton onClick={() => {
-        const prev = editor.getAttributes('link').href as string | undefined;
-        const url = window.prompt('URL', prev ?? 'https://');
-        if (url === null) return;
-        if (url === '') {
-          editor.chain().focus().extendMarkRange('link').unsetLink().run();
-        } else {
-          editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-        }
-      }} active={editor.isActive('link')}>Link</ToolbarButton>
-    </div>
-  );
-}
-
-function ToolbarButton({
-  children,
-  onClick,
-  active,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  active?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-      style={{ minWidth: 32 }}
-    >
-      {children}
-    </button>
   );
 }
 

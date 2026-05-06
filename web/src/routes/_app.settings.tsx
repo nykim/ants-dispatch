@@ -1,10 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { useEditor, EditorContent, type Editor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
 import { getSettings, listTypes, updateSettings, type OrgSettings } from '../api/endpoints';
+import { RichTextEditor } from '../components/RichTextEditor';
 import { renderFooterPreviewHtml } from '../lib/footerPreview';
 import { buildPreviewSrcDoc } from '../lib/previewFrame';
 
@@ -22,25 +20,17 @@ function SettingsPage() {
   const [footerHtml, setFooterHtml] = useState('');
   const [senderName, setSenderName] = useState('');
   const [senderAddress, setSenderAddress] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const seededRef = useRef(false);
 
-  const editor = useEditor({
-    extensions: [StarterKit, Link.configure({ openOnClick: false, autolink: true })],
-    content: '',
-    onUpdate: ({ editor }) => setFooterHtml(editor.getHTML()),
-  });
-
   // One-shot seed once data loads. Subsequent renders preserve user edits.
   useEffect(() => {
-    if (seededRef.current || !data || !editor) return;
+    if (seededRef.current || !data) return;
     seededRef.current = true;
     setFooterHtml(data.footerHtml ?? '');
     setSenderName(data.senderName ?? '');
     setSenderAddress(data.senderAddress ?? '');
-    editor.commands.setContent(data.footerHtml || '<p></p>', { emitUpdate: false });
-  }, [data, editor]);
+  }, [data]);
 
   const saveMut = useMutation({
     mutationFn: (input: Partial<OrgSettings>) => updateSettings(input),
@@ -82,14 +72,7 @@ function SettingsPage() {
               footer body.
             </p>
           </div>
-          <div className="row items-center gap-sm">
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setShowPreview((v) => !v)}
-              type="button"
-            >
-              {showPreview ? 'Hide preview' : 'Preview email'}
-            </button>
+          <div className="row items-center gap-sm" style={{ flexShrink: 0 }}>
             <button
               className="btn btn-primary btn-sm"
               onClick={onSave}
@@ -145,31 +128,24 @@ function SettingsPage() {
 
           <div className="stack" style={{ gap: 6 }}>
             <label className="eyebrow">Footer body (optional)</label>
-            <FooterToolbar editor={editor} />
-            <div
-              className="wysiwyg-editor"
-              style={{
-                minHeight: 160,
-                height: 'auto',
-                border: '1px solid var(--rule, #e5e7eb)',
-                borderRadius: 6,
-              }}
-            >
-              <EditorContent editor={editor} />
-            </div>
+            <RichTextEditor
+              value={footerHtml}
+              onChange={setFooterHtml}
+              toolbar="full"
+              minHeight={320}
+              height={420}
+            />
             <p className="muted" style={{ fontSize: 12 }}>
               Brand text, social links, etc. Leave empty if you only need the address +
               unsubscribe.
             </p>
           </div>
 
-          {showPreview && (
-            <PreviewPanel
-              footerHtml={footerHtml === '<p></p>' ? '' : footerHtml}
-              senderName={senderName}
-              senderAddress={senderAddress}
-            />
-          )}
+          <PreviewPanel
+            footerHtml={footerHtml === '<p></p>' ? '' : footerHtml}
+            senderName={senderName}
+            senderAddress={senderAddress}
+          />
 
           {data?.updatedAt && (
             <p className="muted" style={{ fontSize: 12 }}>
@@ -289,48 +265,6 @@ function UrlRow({ label, url }: { label: string; url: string }) {
         </a>
       </div>
     </div>
-  );
-}
-
-function FooterToolbar({ editor }: { editor: Editor | null }) {
-  if (!editor) return null;
-  return (
-    <div className="row items-center gap-sm" style={{ flexWrap: 'wrap' }}>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')}>B</ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')}><i>I</i></ToolbarButton>
-      <ToolbarButton onClick={() => {
-        const prev = editor.getAttributes('link').href as string | undefined;
-        const url = window.prompt('URL', prev ?? 'https://');
-        if (url === null) return;
-        if (url === '') {
-          editor.chain().focus().extendMarkRange('link').unsetLink().run();
-        } else {
-          editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-        }
-      }} active={editor.isActive('link')}>Link</ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')}>• List</ToolbarButton>
-    </div>
-  );
-}
-
-function ToolbarButton({
-  children,
-  onClick,
-  active,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  active?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-      style={{ minWidth: 32 }}
-    >
-      {children}
-    </button>
   );
 }
 

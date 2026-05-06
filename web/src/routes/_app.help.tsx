@@ -84,7 +84,7 @@ const SECTIONS: Section[] = [
         </p>
         <h4>Editor modes</h4>
         <ul>
-          <li><strong>Visual</strong> — WYSIWYG editing (TipTap). Recommended for most users.</li>
+          <li><strong>Visual</strong> — WYSIWYG editing (TinyMCE). Recommended for most users.</li>
           <li><strong>HTML</strong> — raw editing. Use this when pasting hand-coded layouts (tables, complex inline styles).</li>
         </ul>
         <p>
