@@ -555,6 +555,17 @@ h3 { font-size: 18px; line-height: 1.25; }
 .jodit-editor-wrap .jodit-workplace {
   min-height: inherit;
 }
+/* Compose only: the editor sits in a bounded split-pane. With height:'auto'
+   (see RichHtmlEditor) Jodit grows with content, so the wrapper (.wysiwyg-editor,
+   overflow:auto) is the single scroll region — no second inner scrollbar. Pin
+   Jodit's toolbar to the top of that scroll with position:sticky so it stays
+   visible while the body scrolls under it. Scoped to .split-pane-body so the
+   settings/type editors (which scroll with the page) are untouched. */
+.split-pane-body .jodit-editor-wrap .jodit-toolbar__box {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 .jodit-editor-wrap .jodit-wysiwyg {
   min-height: inherit;
   padding: 18px 24px !important;

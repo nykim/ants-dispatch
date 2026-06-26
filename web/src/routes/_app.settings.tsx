@@ -244,7 +244,7 @@ function SenderIdentityCard({
   sendingDomain: string;
   loading: boolean;
 }) {
-  const effectiveName = fromName.trim() || 'Ants Dispatch';
+  const effectiveName = fromName.trim() || 'MailAnts Dispatch';
   const effectiveLocal = fromLocalPart.trim().toLowerCase() || 'dispatch';
   const previewFrom = sendingDomain
     ? `${effectiveName} <${effectiveLocal}@${sendingDomain}>`
@@ -279,7 +279,7 @@ function SenderIdentityCard({
           />
           <p className="muted" style={{ fontSize: 12 }}>
             Shown as the sender label in the recipient's inbox. Defaults to
-            "Ants Dispatch" if blank.
+            "MailAnts Dispatch" if blank.
           </p>
         </div>
 

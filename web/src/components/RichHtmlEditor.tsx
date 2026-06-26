@@ -59,10 +59,21 @@ export function RichHtmlEditor({
       showCharsCounter: false,
       showWordsCounter: false,
       showXPathInStatusbar: false,
+      // Faithful for clean/hand-coded HTML pastes (the reason we use Jodit)...
+      defaultActionOnPaste: 'insert_as_html',
+      // ...but route Word/Google Docs/Office content through Jodit's cleaner so
+      // tables keep their structure and mso-* junk is dropped. Falls back to
+      // defaultActionOnPaste for non-Office HTML. (Office detection itself was
+      // fixed in 4.12.23, so this now actually triggers.)
+      defaultActionOnPasteFromWord: 'insert_clear_html',
       askBeforePasteHTML: false,
       askBeforePasteFromWord: false,
-      defaultActionOnPaste: 'insert_as_html',
-      height: '100%',
+      // Grow with content; the wrapper (.wysiwyg-editor, overflow:auto) provides
+      // the single scrollbar. In compose the wrapper is height-bounded by its
+      // split-pane and its toolbar is pinned with position:sticky (see
+      // styles.css). '100%' instead made Jodit add its own inner scrollbar on
+      // top of the wrapper's, and let the toolbar scroll out of view.
+      height: 'auto',
       minHeight,
       uploader: {
         insertImageAsBase64URI: false,

@@ -11,7 +11,7 @@ import {
 import { RichHtmlEditor, normalizeEmptyRichHtml } from '../components/RichHtmlEditor';
 import { TypePill } from '../components/types/TypePill';
 
-const DEFAULT_FROM_NAME = 'Ants Dispatch';
+const DEFAULT_FROM_NAME = 'MailAnts Dispatch';
 const DEFAULT_FROM_LOCAL_PART = 'dispatch';
 
 export const Route = createFileRoute('/_app/types/$typeId')({
@@ -324,7 +324,7 @@ function TypeEditPage() {
  * independently optional — leaving a field blank means inherit the org
  * Settings value. The hint under each input tells the operator what
  * blank will resolve to: the org default if set, otherwise the
- * system-wide fallback (`Ants Dispatch` / `dispatch` / no Reply-To).
+ * system-wide fallback (`MailAnts Dispatch` / `dispatch` / no Reply-To).
  *
  * The "Resolved" preview at the bottom shows the actual From + Reply-To
  * headers that a campaign on this type would receive given the current

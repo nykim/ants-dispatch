@@ -247,7 +247,7 @@ const SECTIONS: Section[] = [
         </ul>
         <h4>Optional fields</h4>
         <ul>
-          <li><strong>From display name</strong> — inbox sender label. Defaults to <code>Ants Dispatch</code> if blank.</li>
+          <li><strong>From display name</strong> — inbox sender label. Defaults to <code>MailAnts Dispatch</code> if blank.</li>
           <li><strong>From address local-part</strong> — the part before <code>@your-sending-domain</code>. The domain itself is fixed by SES verification.</li>
           <li><strong>Reply-To</strong> — where replies go. Leave blank to route replies to the From address.</li>
           <li><strong>Sender name</strong> — bolded line above the address.</li>

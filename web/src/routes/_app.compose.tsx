@@ -557,6 +557,75 @@ function ComposePage() {
             A standard footer with your unsubscribe link is added automatically on send — you don't need to include one here. Edit it on the <a href="/settings" style={{ color: 'inherit', textDecoration: 'underline' }}>Settings</a> page.
           </p>
 
+          <div className="row items-center justify-between" style={{ paddingBottom: 8 }}>
+            <div style={{ fontSize: 13 }}>
+              {updateMut.isPending && <span className="muted">Saving…</span>}
+              {updateMut.isSuccess && !updateMut.isPending && (
+                <span className="muted">
+                  Saved · v{current.version} · {(current.html?.length ?? 0).toLocaleString()} chars on server
+                </span>
+              )}
+              {updateMut.error && (
+                <span style={{ color: 'var(--bad)' }}>
+                  Save failed: {(updateMut.error as Error).message}
+                </span>
+              )}
+              {!updateMut.isPending && !updateMut.isSuccess && !updateMut.error && (
+                <span className="muted">
+                  Autosaves as you type · {(current.html?.length ?? 0).toLocaleString()} chars on server
+                </span>
+              )}
+            </div>
+            <div className="row gap-sm">
+              <button
+                className="btn btn-sm"
+                style={{ color: 'var(--bad)' }}
+                onClick={() => {
+                  if (confirm(`Delete "${current.title}"?`)) deleteMut.mutate(current.id);
+                }}
+                disabled={deleteMut.isPending}
+              >
+                Delete
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => setPreviewOpen(true)}
+                disabled={!localHtml.trim()}
+                title="See the email exactly as it will render, including the footer"
+              >
+                Preview rendered email
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => testSendMut.mutate()}
+                disabled={testSendMut.isPending}
+                title="Email the current draft to yourself for review"
+              >
+                {testSendMut.isPending
+                  ? 'Sending…'
+                  : testSendMut.isSuccess
+                    ? `Sent to ${testSendMut.data?.to ?? 'you'} ✓`
+                    : 'Send to yourself'}
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  if (current.id) {
+                    window.localStorage.setItem(SEND_PRESELECT_KEY, current.id);
+                  }
+                  navigate({ to: '/send' });
+                }}
+              >
+                Continue to Send →
+              </button>
+            </div>
+          </div>
+          {testSendMut.error && (
+            <div style={{ color: 'var(--bad)', fontSize: 12, paddingBottom: 8 }}>
+              Test send failed: {(testSendMut.error as Error).message}
+            </div>
+          )}
+
           <div
             ref={splitRef}
             className="split"
@@ -697,75 +766,6 @@ function ComposePage() {
               </>
             )}
           </div>
-
-          <div className="row items-center justify-between" style={{ paddingTop: 4 }}>
-            <div style={{ fontSize: 13 }}>
-              {updateMut.isPending && <span className="muted">Saving…</span>}
-              {updateMut.isSuccess && !updateMut.isPending && (
-                <span className="muted">
-                  Saved · v{current.version} · {(current.html?.length ?? 0).toLocaleString()} chars on server
-                </span>
-              )}
-              {updateMut.error && (
-                <span style={{ color: 'var(--bad)' }}>
-                  Save failed: {(updateMut.error as Error).message}
-                </span>
-              )}
-              {!updateMut.isPending && !updateMut.isSuccess && !updateMut.error && (
-                <span className="muted">
-                  Autosaves as you type · {(current.html?.length ?? 0).toLocaleString()} chars on server
-                </span>
-              )}
-            </div>
-            <div className="row gap-sm">
-              <button
-                className="btn btn-sm"
-                style={{ color: 'var(--bad)' }}
-                onClick={() => {
-                  if (confirm(`Delete "${current.title}"?`)) deleteMut.mutate(current.id);
-                }}
-                disabled={deleteMut.isPending}
-              >
-                Delete
-              </button>
-              <button
-                className="btn btn-sm"
-                onClick={() => setPreviewOpen(true)}
-                disabled={!localHtml.trim()}
-                title="See the email exactly as it will render, including the footer"
-              >
-                Preview rendered email
-              </button>
-              <button
-                className="btn btn-sm"
-                onClick={() => testSendMut.mutate()}
-                disabled={testSendMut.isPending}
-                title="Email the current draft to yourself for review"
-              >
-                {testSendMut.isPending
-                  ? 'Sending…'
-                  : testSendMut.isSuccess
-                    ? `Sent to ${testSendMut.data?.to ?? 'you'} ✓`
-                    : 'Send to yourself'}
-              </button>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={() => {
-                  if (current.id) {
-                    window.localStorage.setItem(SEND_PRESELECT_KEY, current.id);
-                  }
-                  navigate({ to: '/send' });
-                }}
-              >
-                Continue to Send →
-              </button>
-            </div>
-          </div>
-          {testSendMut.error && (
-            <div style={{ color: 'var(--bad)', fontSize: 12, paddingTop: 4 }}>
-              Test send failed: {(testSendMut.error as Error).message}
-            </div>
-          )}
         </div>
       ) : (
         <div className="muted" style={{ padding: 40, textAlign: 'center' }}>

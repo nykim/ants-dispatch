@@ -83,10 +83,10 @@ The sidebar, browser tab title, and collapsed-sidebar mark all read from a
 single brand prefix. "Dispatch" is fixed; only the prefix is configurable.
 
 ```
-VITE_APP_BRAND=Ants     # → "Ants Dispatch", collapsed mark "A•"
+VITE_APP_BRAND=MailAnts  # → "MailAnts Dispatch", collapsed mark "M•"
 ```
 
-Defaults to `Ants` if unset. Rebuild + redeploy to apply.
+Defaults to `MailAnts` if unset. Rebuild + redeploy to apply.
 
 ## Routes
 

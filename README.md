@@ -1,4 +1,4 @@
-# Ants Dispatch
+# MailAnts Dispatch
 A serverless newsletter sender for small admin teams. Compose HTML or
 WYSIWYG, segment subscribers by tag, send / simulate / schedule campaigns
 through SES, track delivery / opens / clicks / bounces, and self-serve
@@ -8,7 +8,7 @@ unsubscribes.
 <br>
 <img width="1182" height="650" alt="Screenshot 2026-04-26 at 8 53 26 PM" src="https://github.com/user-attachments/assets/bbf8a77b-29b1-42e5-aad0-e532352f21fd" />
 
-The default brand prefix is **Ants** (configurable per build via
+The default brand prefix is **MailAnts** (configurable per build via
 `VITE_APP_BRAND` — see [Brand](#brand)).
 
 ## Tech stack
@@ -409,7 +409,7 @@ The script sets:
 - `VITE_COGNITO_CLIENT_ID=<UserPoolClientId>`
 - `VITE_REDIRECT_URI=<PublicUrl>/auth/callback`
 
-`VITE_APP_BRAND` remains optional; if unset, the UI uses "Ants".
+`VITE_APP_BRAND` remains optional; if unset, the UI uses "MailAnts".
 
 Visit `https://dispatch.your-domain.com`, sign in with the admin user.
 
@@ -487,7 +487,7 @@ The prefix is configurable; "Dispatch" is fixed.
 VITE_APP_BRAND=Acme          # → "Acme Dispatch", collapsed mark "A•"
 ```
 
-Defaults to `Ants` if unset. Rebuild + redeploy the SPA to apply.
+Defaults to `MailAnts` if unset. Rebuild + redeploy the SPA to apply.
 
 ### Domain
 

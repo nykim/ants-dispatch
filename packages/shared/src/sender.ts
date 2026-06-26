@@ -23,10 +23,11 @@ export interface ResolvedSender {
   replyTo?: string;
 }
 
-/** Mirrors the historical FROM_ADDRESS env value
- *  (`Ants Dispatch <dispatch@<sendingDomain>>`) so workspaces that never
- *  configure the new fields keep getting the same outbound headers. */
-export const DEFAULT_FROM_NAME = 'Ants Dispatch';
+/** Default sender display name for workspaces that never configure the sender
+ *  fields. (The historical FROM_ADDRESS shape was
+ *  `Ants Dispatch <dispatch@<sendingDomain>>`; workspaces relying on the
+ *  default now send as "MailAnts Dispatch" instead.) */
+export const DEFAULT_FROM_NAME = 'MailAnts Dispatch';
 export const DEFAULT_FROM_LOCAL_PART = 'dispatch';
 
 export const FROM_LOCAL_PART_RE = /^[a-z0-9._-]{1,64}$/;
@@ -53,7 +54,7 @@ export function resolveSender(
 
 /** RFC 5322: a display name containing any of the listed specials must be
  *  encoded as a quoted-string. Plain ASCII names without specials pass
- *  through unquoted, matching the legacy `Ants Dispatch <…>` shape. */
+ *  through unquoted, matching the `MailAnts Dispatch <…>` shape. */
 function formatDisplayName(name: string): string {
   if (/[(),:;<>@\\"\[\]]/.test(name)) {
     return `"${name.replace(/(["\\])/g, '\\$1')}"`;
