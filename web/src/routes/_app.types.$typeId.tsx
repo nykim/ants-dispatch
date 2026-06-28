@@ -43,7 +43,6 @@ function TypeEditPage() {
   const [fromLocalPart, setFromLocalPart] = useState('');
   const [replyTo, setReplyTo] = useState('');
   const [tagWarning, setTagWarning] = useState<string | null>(null);
-  const [editorMode, setEditorMode] = useState<'visual' | 'code'>('visual');
   const seededRef = useRef(false);
 
   // Org defaults — used to render the "inherits …" hints next to each
@@ -268,43 +267,13 @@ function TypeEditPage() {
               starting body. Leave blank to fall back to the system default.
             </p>
           </div>
-          <div className="editor-mode-toggle" role="tablist" aria-label="Editor mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={editorMode === 'visual'}
-              className={`editor-mode-btn ${editorMode === 'visual' ? 'active' : ''}`}
-              onClick={() => setEditorMode('visual')}
-            >
-              Visual
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={editorMode === 'code'}
-              className={`editor-mode-btn ${editorMode === 'code' ? 'active' : ''}`}
-              onClick={() => setEditorMode('code')}
-            >
-              HTML
-            </button>
-          </div>
         </div>
         <div className="card-body stack" style={{ gap: 8 }}>
-          {editorMode === 'visual' ? (
-            <RichHtmlEditor
-              value={defaultBodyHtml}
-              onChange={setDefaultBodyHtml}
-              minHeight={320}
-            />
-          ) : (
-            <textarea
-              className="code-editor"
-              value={defaultBodyHtml}
-              onChange={(e) => setDefaultBodyHtml(e.target.value)}
-              spellCheck={false}
-              style={{ minHeight: 320 }}
-            />
-          )}
+          <RichHtmlEditor
+            value={defaultBodyHtml}
+            onChange={setDefaultBodyHtml}
+            minHeight={320}
+          />
         </div>
       </div>
 

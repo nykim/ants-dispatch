@@ -25,13 +25,6 @@ export const Route = createFileRoute('/_app/compose')({
 });
 
 const LIST_COLLAPSE_KEY = 'dispatch.compose.list.collapsed';
-const ASSET_BASE_KEY = 'dispatch.compose.assetBase';
-const EDITOR_MODE_KEY = 'dispatch.compose.editorMode';
-const SPLIT_RATIO_KEY = 'dispatch.compose.splitRatio';
-const MIN_PANE_PCT = 20;
-const MAX_PANE_PCT = 80;
-
-type EditorMode = 'visual' | 'code';
 
 const DEFAULT_HTML = `<!doctype html>
 <html><body style="font-family:Georgia,serif;max-width:600px;margin:0 auto;padding:32px">
@@ -76,64 +69,6 @@ function ComposePage() {
     window.localStorage.setItem(LIST_COLLAPSE_KEY, listCollapsed ? '1' : '0');
   }, [listCollapsed]);
 
-  const [assetBase, setAssetBase] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    return window.localStorage.getItem(ASSET_BASE_KEY) ?? '';
-  });
-  useEffect(() => {
-    window.localStorage.setItem(ASSET_BASE_KEY, assetBase);
-  }, [assetBase]);
-
-  const [editorMode, setEditorMode] = useState<EditorMode>(() => {
-    if (typeof window === 'undefined') return 'visual';
-    const saved = window.localStorage.getItem(EDITOR_MODE_KEY);
-    return saved === 'code' || saved === 'visual' ? (saved as EditorMode) : 'visual';
-  });
-  useEffect(() => {
-    window.localStorage.setItem(EDITOR_MODE_KEY, editorMode);
-  }, [editorMode]);
-
-  const [splitRatio, setSplitRatio] = useState<number>(() => {
-    if (typeof window === 'undefined') return 50;
-    const saved = Number(window.localStorage.getItem(SPLIT_RATIO_KEY));
-    return Number.isFinite(saved) && saved >= MIN_PANE_PCT && saved <= MAX_PANE_PCT ? saved : 50;
-  });
-  useEffect(() => {
-    window.localStorage.setItem(SPLIT_RATIO_KEY, String(splitRatio));
-  }, [splitRatio]);
-  const splitRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef(false);
-  function startDrag(e: React.MouseEvent) {
-    e.preventDefault();
-    draggingRef.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-    const onMove = (ev: MouseEvent) => {
-      if (!draggingRef.current || !splitRef.current) return;
-      const rect = splitRef.current.getBoundingClientRect();
-      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
-      setSplitRatio(Math.min(MAX_PANE_PCT, Math.max(MIN_PANE_PCT, pct)));
-    };
-    const onUp = () => {
-      draggingRef.current = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }
-
-  // Snapshot of the original (pre-WYSIWYG) HTML, captured the first time the
-  // user enters Visual mode for a given template. Lets us offer a "Restore
-  // HTML" button if visual editing has lost meaningful detail.
-  // Reset whenever the active template changes (handled in the localHtml reset
-  // effect below).
-  const originalHtmlRef = useRef<string | null>(null);
-  // Whether we've already shown the fidelity-loss confirm for this template,
-  // so the user only has to acknowledge it once per template per session.
-  const fidelityWarnedRef = useRef<Set<string>>(new Set());
   const current = useMemo(
     () => templates.find((t) => t.id === currentId) ?? templates[0],
     [templates, currentId],
@@ -222,21 +157,16 @@ function ComposePage() {
     onError: (e) => console.error('[compose] save failed', e),
   });
 
-  // "Send to yourself" — flushes any pending edit (so the test reflects what
-  // the user is currently looking at, not the last autosave) before calling
-  // the test-send endpoint. Recipient defaults to the signed-in user's email
-  // server-side, so no input is needed here.
+  // "Send to yourself" — gated on a clean save (the button is disabled while
+  // there are unsaved edits), so the test always reflects the saved draft.
+  // Recipient defaults to the signed-in user's email server-side, so no input
+  // is needed here.
   const testSendMut = useMutation({
     mutationFn: async () => {
       const c = currentRef.current;
       if (!c?.id) throw new Error('No newsletter selected');
       if (!localSubject.trim()) throw new Error('Add a subject line before sending a test');
       if (!localHtml.trim()) throw new Error('Newsletter has no content');
-      const dirty =
-        localHtml !== c.html || localSubject !== c.subject || localTitle !== c.title;
-      if (dirty) {
-        await updateTemplate(c.id, { ...c, html: localHtml, subject: localSubject, title: localTitle });
-      }
       return testSendTemplate(c.id);
     },
     onError: (e) => console.error('test-send failed', e),
@@ -253,7 +183,6 @@ function ComposePage() {
     onError: (e) => console.error('deleteTemplate failed', e),
   });
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const visualEditorRef = useRef<RichHtmlEditorHandle | null>(null);
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
 
@@ -269,125 +198,49 @@ function ComposePage() {
     setLocalHtml(newHtml);
     setLocalSubject(current?.subject ?? '');
     setLocalTitle(current?.title ?? '');
-    originalHtmlRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
-  // Switch into visual mode. If the user has hand-coded HTML that Jodit may
-  // simplify (tables, <style>, lots of inline styles), warn them once per
-  // template and snapshot the original so they can restore later.
-  function requestVisualMode() {
-    const id = current?.id;
-    if (!id) {
-      setEditorMode('visual');
-      return;
-    }
-    const looksComplex = /<table|<style|style="[^"]{40,}/i.test(localHtml);
-    const alreadyWarned = fidelityWarnedRef.current.has(id);
-    if (looksComplex && !alreadyWarned) {
-      const ok = window.confirm(
-        'Visual mode may simplify hand-coded HTML — tables, <style> blocks, and complex inline styles can be normalized or stripped.\n\n' +
-        'A snapshot of the current HTML will be kept. You can click "Restore HTML" in HTML mode to revert.\n\nContinue?',
-      );
-      if (!ok) return;
-      fidelityWarnedRef.current.add(id);
-    }
-    if (originalHtmlRef.current === null) {
-      originalHtmlRef.current = localHtml;
-    }
-    setEditorMode('visual');
-  }
-
-  function restoreOriginalHtml() {
-    const original = originalHtmlRef.current;
-    if (original === null) return;
-    setLocalHtml(original);
-    originalHtmlRef.current = null;
-  }
-
-  const canRestore = editorMode === 'code' && originalHtmlRef.current !== null && originalHtmlRef.current !== localHtml;
-
-  // Insert a chosen asset into whichever editor is active. In Code mode we
-  // splice raw markup at the textarea's caret to preserve the surrounding
-  // HTML structure the user is hand-editing.
+  // Insert a chosen asset (image) at the editor's caret via the Jodit handle.
   function handleAssetSelect(asset: Asset) {
     setImagePickerOpen(false);
     const alt = asset.filename.replace(/\.[a-z0-9]+$/i, '').replace(/-/g, ' ');
     const tag = `<img src="${asset.url}" alt="${escapeAttr(alt)}" style="max-width:100%;height:auto" />`;
-    if (editorMode === 'visual') {
-      const editor = visualEditorRef.current;
-      if (!editor) {
-        setLocalHtml((prev) => prev + (prev.endsWith('\n') ? '' : '\n') + tag);
-        return;
-      }
-      editor.focus();
-      editor.s.insertHTML(tag);
-      setLocalHtml(editor.getEditorValue());
-      return;
-    }
-    const ta = textareaRef.current;
-    if (!ta) {
+    const editor = visualEditorRef.current;
+    if (!editor) {
       setLocalHtml((prev) => prev + (prev.endsWith('\n') ? '' : '\n') + tag);
       return;
     }
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const next = localHtml.slice(0, start) + tag + localHtml.slice(end);
-    setLocalHtml(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      const pos = start + tag.length;
-      ta.setSelectionRange(pos, pos);
-    });
+    editor.focus();
+    editor.s.insertHTML(tag);
+    setLocalHtml(editor.getEditorValue());
   }
 
-  const previewDoc = useMemo(
-    () => buildPreviewSrcDoc(localHtml, { baseHref: assetBase || undefined }),
-    [assetBase, localHtml],
-  );
+  // Manual save: edits live in local state until the user clicks Save — there
+  // is no autosave. `isDirty` drives the Save button, the status line, and the
+  // unsaved-changes guards (tab close + newsletter switch).
+  const isDirty =
+    !!current &&
+    (localHtml !== (current.html ?? '') ||
+      localSubject !== (current.subject ?? '') ||
+      localTitle !== (current.title ?? ''));
 
-  // Debounced autosave — fires 750ms after the last keystroke. We use the
-  // currentRef (declared above) so the timer never fires against a stale id
-  // (e.g. when a fresh template was just created but React re-renders haven't
-  // settled yet).
+  function saveContent() {
+    if (!isDirty || updateMut.isPending) return;
+    updateMut.mutate({ html: localHtml, subject: localSubject, title: localTitle });
+  }
+
+  // Warn before leaving the page (reload / tab close) while there are unsaved
+  // edits. (In-app newsletter switches are guarded separately, on click.)
   useEffect(() => {
-    const c = currentRef.current;
-    if (!c?.id || c.id === 'undefined') {
-      console.warn('[autosave-skip] current has no usable id', c?.id);
-      return;
-    }
-    // If the server record is missing html/subject/title for any reason,
-    // treat it as "no change" rather than overwriting with whatever's in
-    // local state. Otherwise an undefined-vs-string mismatch would trigger
-    // a save that wipes the field server-side.
-    if (typeof c.html !== 'string' || typeof c.subject !== 'string' || typeof c.title !== 'string') {
-      console.warn('[autosave-skip] current is missing string field', {
-        id: c.id,
-        html: typeof c.html, subject: typeof c.subject, title: typeof c.title,
-      });
-      return;
-    }
-    const noChange =
-      localHtml === c.html &&
-      localSubject === c.subject &&
-      localTitle === c.title;
-    console.log('[autosave-check]', {
-      id: c.id, noChange,
-      localHtmlLen: localHtml.length,
-      currentHtmlLen: c.html.length,
-      localTitle, currentTitle: c.title,
-    });
-    if (noChange) return;
-    const t = setTimeout(() => {
-      const c2 = currentRef.current;
-      if (!c2?.id) return;
-      console.log('[autosave-fire]', c2.id, 'htmlLen', localHtml.length);
-      updateMut.mutate({ html: localHtml, subject: localSubject, title: localTitle });
-    }, 750);
-    return () => clearTimeout(t);
-    // updateMut intentionally omitted — we only re-schedule when the inputs change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localHtml, localSubject, localTitle, current?.id]);
+    if (!isDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isDirty]);
 
   if (isLoading) return <p className="muted">Loading templates…</p>;
   if (error) return <p style={{ color: 'var(--bad)' }}>Failed to load templates: {(error as Error).message}</p>;
@@ -437,6 +290,7 @@ function ComposePage() {
                     navigate({ to: '/types' });
                     return;
                   }
+                  if (isDirty && !confirm('Discard unsaved changes and start a new newsletter?')) return;
                   setPicking({ open: true });
                 }}
                 disabled={createMut.isPending}
@@ -469,7 +323,11 @@ function ComposePage() {
                 return (
                   <button
                     key={t.id}
-                    onClick={() => setCurrentId(t.id)}
+                    onClick={() => {
+                      if (t.id === current?.id) return;
+                      if (isDirty && !confirm('Discard unsaved changes and switch newsletters?')) return;
+                      setCurrentId(t.id);
+                    }}
                     style={{
                       display: 'block',
                       width: '100%',
@@ -524,10 +382,16 @@ function ComposePage() {
                     onChange={(e) => {
                       const newTypeId = e.target.value;
                       if (!newTypeId || newTypeId === current.typeId) return;
-                      // Persist via the existing autosave path so the change
-                      // flushes immediately. Don't rewrite subject here — that
+                      // Changing the type persists immediately, together with
+                      // the current local edits so nothing is lost. We don't
+                      // rewrite the subject from the type prefix here — that
                       // would clobber user-edited content.
-                      updateMut.mutate({ typeId: newTypeId });
+                      updateMut.mutate({
+                        typeId: newTypeId,
+                        html: localHtml,
+                        subject: localSubject,
+                        title: localTitle,
+                      });
                       window.localStorage.setItem(LAST_TYPE_KEY, newTypeId);
                     }}
                     style={{ fontSize: 13, padding: '10px 12px' }}
@@ -559,24 +423,29 @@ function ComposePage() {
 
           <div className="row items-center justify-between" style={{ paddingBottom: 8 }}>
             <div style={{ fontSize: 13 }}>
-              {updateMut.isPending && <span className="muted">Saving…</span>}
-              {updateMut.isSuccess && !updateMut.isPending && (
+              {updateMut.isPending ? (
+                <span className="muted">Saving…</span>
+              ) : updateMut.error ? (
+                <span style={{ color: 'var(--bad)' }}>
+                  Save failed: {(updateMut.error as Error).message}
+                </span>
+              ) : isDirty ? (
+                <span style={{ color: 'var(--accent-deep)' }}>● Unsaved changes</span>
+              ) : (
                 <span className="muted">
                   Saved · v{current.version} · {(current.html?.length ?? 0).toLocaleString()} chars on server
                 </span>
               )}
-              {updateMut.error && (
-                <span style={{ color: 'var(--bad)' }}>
-                  Save failed: {(updateMut.error as Error).message}
-                </span>
-              )}
-              {!updateMut.isPending && !updateMut.isSuccess && !updateMut.error && (
-                <span className="muted">
-                  Autosaves as you type · {(current.html?.length ?? 0).toLocaleString()} chars on server
-                </span>
-              )}
             </div>
             <div className="row gap-sm">
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={saveContent}
+                disabled={!isDirty || updateMut.isPending}
+                title="Save your changes to the server"
+              >
+                {updateMut.isPending ? 'Saving…' : 'Save'}
+              </button>
               <button
                 className="btn btn-sm"
                 style={{ color: 'var(--bad)' }}
@@ -598,8 +467,8 @@ function ComposePage() {
               <button
                 className="btn btn-sm"
                 onClick={() => testSendMut.mutate()}
-                disabled={testSendMut.isPending}
-                title="Email the current draft to yourself for review"
+                disabled={testSendMut.isPending || isDirty}
+                title={isDirty ? 'Save your changes before sending a test' : 'Email the current draft to yourself for review'}
               >
                 {testSendMut.isPending
                   ? 'Sending…'
@@ -615,6 +484,8 @@ function ComposePage() {
                   }
                   navigate({ to: '/send' });
                 }}
+                disabled={isDirty}
+                title={isDirty ? 'Save your changes before continuing' : undefined}
               >
                 Continue to Send →
               </button>
@@ -627,41 +498,11 @@ function ComposePage() {
           )}
 
           <div
-            ref={splitRef}
             className="split"
-            style={{
-              gridTemplateColumns:
-                editorMode === 'visual'
-                  ? '1fr'
-                  : `${splitRatio}% 6px ${100 - splitRatio}%`,
-              gridTemplateRows: '1fr',
-              gap: 0,
-            }}
+            style={{ gridTemplateColumns: '1fr', gridTemplateRows: '1fr', gap: 0 }}
           >
             <div className="split-pane">
               <div className="split-pane-header" style={{ gap: 8 }}>
-                <div className="editor-mode-toggle" role="tablist" aria-label="Editor mode">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={editorMode === 'visual'}
-                    className={`editor-mode-btn ${editorMode === 'visual' ? 'active' : ''}`}
-                    onClick={() => {
-                      if (editorMode !== 'visual') requestVisualMode();
-                    }}
-                  >
-                    Visual
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={editorMode === 'code'}
-                    className={`editor-mode-btn ${editorMode === 'code' ? 'active' : ''}`}
-                    onClick={() => setEditorMode('code')}
-                  >
-                    HTML
-                  </button>
-                </div>
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -676,95 +517,16 @@ function ComposePage() {
                 </span>
               </div>
               <div className="split-pane-body">
-                {editorMode === 'code' ? (
-                  <div style={{ position: 'relative', height: '100%' }}>
-                    <textarea
-                      ref={textareaRef}
-                      className="code-editor"
-                      value={localHtml}
-                      onChange={(e) => setLocalHtml(e.target.value)}
-                      spellCheck={false}
-                    />
-                    {canRestore && (
-                      <button
-                        type="button"
-                        onClick={restoreOriginalHtml}
-                        title="Replace the current HTML with the snapshot taken before Visual mode was first enabled for this newsletter."
-                        style={{
-                          position: 'absolute', top: 8, right: 8, fontSize: 11,
-                          padding: '4px 8px', border: '1px solid var(--rule)',
-                          background: 'var(--paper)', color: 'var(--ink-soft)',
-                          cursor: 'pointer', fontFamily: 'var(--sans)',
-                        }}
-                      >
-                        Restore HTML
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <RichHtmlEditor
-                    value={localHtml}
-                    onChange={setLocalHtml}
-                    onReady={(editor) => {
-                      visualEditorRef.current = editor;
-                    }}
-                    onPickImage={() => setImagePickerOpen(true)}
-                  />
-                )}
-              </div>
-            </div>
-            {editorMode === 'code' && (
-              <>
-                <div
-                  role="separator"
-                  aria-orientation="vertical"
-                  aria-label="Resize editor and preview"
-                  onMouseDown={startDrag}
-                  onDoubleClick={() => setSplitRatio(50)}
-                  title="Drag to resize · double-click to reset"
-                  style={{
-                    cursor: 'col-resize',
-                    background: 'var(--rule)',
-                    position: 'relative',
-                    userSelect: 'none',
+                <RichHtmlEditor
+                  value={localHtml}
+                  onChange={setLocalHtml}
+                  onReady={(editor) => {
+                    visualEditorRef.current = editor;
                   }}
-                >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '50% -4px auto -4px',
-                      transform: 'translateY(-50%)',
-                      height: 32,
-                      borderLeft: '1px solid var(--rule-soft)',
-                      borderRight: '1px solid var(--rule-soft)',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                </div>
-                <div className="split-pane">
-                  <div className="split-pane-header" style={{ gap: 8 }}>
-                    <span className="mono-sm">Preview</span>
-                <input
-                  className="input"
-                  value={assetBase}
-                  onChange={(e) => setAssetBase(e.target.value)}
-                  placeholder="Asset base URL (e.g. https://example.org)"
-                  title="Resolves relative <img>/<a> URLs in the preview. Saved per-browser."
-                  style={{ flex: 1, fontSize: 11, padding: '4px 8px', fontFamily: 'var(--mono)' }}
+                  onPickImage={() => setImagePickerOpen(true)}
                 />
               </div>
-                  <div className="split-pane-body preview-shell">
-                    <iframe
-                      className="preview-page"
-                      style={{ border: 'none' }}
-                      title="preview"
-                      srcDoc={previewDoc}
-                      sandbox=""
-                    />
-                  </div>
-                </div>
-              </>
-            )}
+            </div>
           </div>
         </div>
       ) : (

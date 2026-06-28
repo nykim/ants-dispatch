@@ -96,7 +96,7 @@ The unauthenticated `/auth/callback` runs the PKCE code exchange.
 
 | Route                        | Backed by | Purpose |
 |------------------------------|-----------|---------|
-| `/compose`                   | `/admin/templates` (CRUD), `/admin/types`, `/admin/assets`, `/admin/templates/{id}/test-send` | Per-newsletter editor with Jodit (Visual / HTML modes), live preview iframe, asset picker, debounced autosave, "Send to yourself" test send, "Preview rendered email" modal, resizable HTML/preview split. |
+| `/compose`                   | `/admin/templates` (CRUD), `/admin/types`, `/admin/assets`, `/admin/templates/{id}/test-send` | Per-newsletter editor with Jodit (WYSIWYG; raw HTML via the editor's built-in source view), asset picker, explicit Save (no autosave), "Send to yourself" test send, "Preview rendered email" modal. |
 | `/types`, `/types/$typeId`   | `/admin/types` | List + edit page for newsletter types, including a default HTML body that seeds new newsletters of that type. |
 | `/subscribers`               | `/admin/contacts`, `/admin/imports`, `/admin/suppressions` | Subscriber table, CSV import, single-contact create, suppressions panel. |
 | `/send`                      | `/admin/audience/preview`, `/admin/campaigns`, `POST /admin/campaigns/{id}/send` | Three-step send wizard (recipients, timing, review). Hands off to `worker-enqueue` via the campaign send API. |

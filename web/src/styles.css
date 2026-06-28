@@ -493,47 +493,6 @@ h3 { font-size: 18px; line-height: 1.25; }
 }
 .split-pane-body { flex: 1; overflow: auto; }
 
-.code-editor {
-  width: 100%;
-  height: 100%;
-  border: none;
-  outline: none;
-  padding: 16px 18px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--ink);
-  background: var(--paper);
-  resize: none;
-  tab-size: 2;
-}
-
-/* Editor mode toggle (segmented control in split-pane-header) */
-.editor-mode-toggle {
-  display: inline-flex;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--paper);
-}
-.editor-mode-btn {
-  padding: 4px 10px;
-  border: none;
-  background: transparent;
-  font-family: var(--sans);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--ink-soft);
-  cursor: pointer;
-  text-transform: uppercase;
-}
-.editor-mode-btn:not(:first-child) { border-left: 1px solid var(--rule); }
-.editor-mode-btn:hover { background: var(--paper-deep); color: var(--ink); }
-.editor-mode-btn.active {
-  background: var(--ink);
-  color: var(--paper);
-}
-
 /* WYSIWYG toolbar */
 /* WYSIWYG editor surface (Jodit) */
 .wysiwyg-editor {

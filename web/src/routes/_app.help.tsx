@@ -84,21 +84,16 @@ const SECTIONS: Section[] = [
       <>
         <p>
           Click <Link to="/compose">Compose</Link> → <em>+ New newsletter</em>. Pick a type — the
-          new draft inherits that type’s subject prefix and template HTML. Drafts autosave every
-          ~750ms.
+          new draft inherits that type’s subject prefix and template HTML. Your edits stay local
+          until you click <strong>Save</strong>.
         </p>
-        <h4>Editor modes</h4>
-        <ul>
-          <li><strong>Visual</strong> — WYSIWYG editing (Jodit). Recommended for most users.</li>
-          <li><strong>HTML</strong> — raw editing. Use this when pasting hand-coded layouts (tables, complex inline styles).</li>
-        </ul>
+        <h4>Editing</h4>
         <p>
-          Switching from HTML → Visual may simplify hand-coded markup; the system warns you the
-          first time and snapshots the original so you can hit <em>Restore HTML</em> if needed.
+          The body is edited with the WYSIWYG editor (Jodit). To hand-edit raw HTML, use the
+          editor's built-in source view (the <code>&lt;&gt;</code> button on its toolbar).
         </p>
-        <h4>Preview tools</h4>
+        <h4>Preview</h4>
         <ul>
-          <li><strong>HTML preview pane</strong> — in HTML mode, a live side-by-side preview renders your markup as you type. Use <strong>Asset base URL</strong> if your HTML references relative assets.</li>
           <li><strong>Preview rendered email</strong> — opens the full email in a modal, including the footer that will be appended on send.</li>
         </ul>
         <h4>Images</h4>
